@@ -4,10 +4,10 @@
 
 ## Install or update in one command
 
-Run this from anywhere:
+For a private repo, run this from anywhere (requires `gh auth login`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chadiek/thr/main/install.sh | bash
+gh api repos/Chadi00/thr/contents/install.sh?ref=master --jq '.content' | base64 --decode | bash
 ```
 
 This command:
@@ -15,6 +15,12 @@ This command:
 - installs required dependencies (Go toolchain, CGO build tools, ONNX Runtime) when possible
 - installs `thr` globally via `go install`
 - updates to the latest `thr` version when re-run
+
+If the repo becomes public, you can also use:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
+```
 
 ## Commands
 
