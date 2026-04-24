@@ -16,7 +16,9 @@ type runtimeDeps struct {
 	embedder embed.Embedder
 }
 
-func initRuntime(dbFlag string, withEmbedder bool) (*runtimeDeps, func(), error) {
+// showEmbedDownload controls fastembed download/progress output when the embedder
+// is initialized. It is ignored when withEmbedder is false.
+func initRuntime(dbFlag string, withEmbedder bool, showEmbedDownload bool) (*runtimeDeps, func(), error) {
 	cfg, err := config.Load(dbFlag)
 	if err != nil {
 		return nil, nil, err
@@ -44,7 +46,7 @@ func initRuntime(dbFlag string, withEmbedder bool) (*runtimeDeps, func(), error)
 	}
 
 	if withEmbedder {
-		bge, err := embed.NewBGEEmbedder(cfg.ModelCache)
+		bge, err := embed.NewBGEEmbedder(cfg.ModelCache, showEmbedDownload)
 		if err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("initialize embedder: %w", err)

@@ -12,8 +12,8 @@ type BGEEmbedder struct {
 	mu    sync.Mutex
 }
 
-func NewBGEEmbedder(cacheDir string) (*BGEEmbedder, error) {
-	showProgress := false
+func NewBGEEmbedder(cacheDir string, showDownloadProgress bool) (*BGEEmbedder, error) {
+	showProgress := showDownloadProgress
 	options := fastembed.InitOptions{
 		Model:                fastembed.BGEBaseENV15,
 		CacheDir:             cacheDir,

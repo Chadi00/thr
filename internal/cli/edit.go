@@ -16,7 +16,7 @@ func newEditCommand(dbPath *string) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, true)
+			deps, cleanup, err := initRuntime(*dbPath, true, false)
 			if err != nil {
 				return err
 			}

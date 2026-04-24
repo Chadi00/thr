@@ -15,7 +15,7 @@ func newListCommand(dbPath *string) *cobra.Command {
 		Short: "List stored memories",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, false)
+			deps, cleanup, err := initRuntime(*dbPath, false, false)
 			if err != nil {
 				return err
 			}

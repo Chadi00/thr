@@ -21,6 +21,7 @@ func NewRootCommand() *cobra.Command {
 		newSearchCommand(&dbPath),
 		newEditCommand(&dbPath),
 		newForgetCommand(&dbPath),
+		newPrefetchCommand(&dbPath),
 	)
 
 	return rootCmd

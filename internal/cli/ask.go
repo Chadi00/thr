@@ -18,7 +18,7 @@ func newAskCommand(dbPath *string) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, true)
+			deps, cleanup, err := initRuntime(*dbPath, true, false)
 			if err != nil {
 				return err
 			}

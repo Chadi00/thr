@@ -281,6 +281,21 @@ apply_gobin_to_path_in_this_process() {
 
 # Run the same `source` for the rc file we just updated (e.g. ~/.zshrc), in a matching
 # shell, so the installer actually executes a source step (separate from your login shell).
+# After install, load the BGE embedding model so the first add/ask is not slow.
+prefetch_embedding_model() {
+  local gothr
+  gothr="$(_go_bin_dir)/thr"
+
+  if command -v thr >/dev/null 2>&1; then
+    thr prefetch
+  elif [[ -x "$gothr" ]]; then
+    log "Using $gothr for prefetch (add Go bin to PATH to run thr from anywhere)..."
+    "$gothr" prefetch
+  else
+    return 1
+  fi
+}
+
 source_shell_rc_in_subshell() {
   local rc qrc
   local ok=0
@@ -366,6 +381,13 @@ main() {
     log "Ready: $(command -v thr)"
   else
     warn "thr is not on PATH in this install session; on macOS, try opening a new terminal, or: export PATH=\"$(_go_bin_dir):\$PATH\""
+  fi
+
+  log "Ensuring the embedding model is in cache (first install may take a minute)..."
+  if prefetch_embedding_model; then
+    log "Embedding model is available; add/ask will not block on a first-time download."
+  else
+    warn "Could not run thr prefetch. The model will download on the first add, ask, or edit."
   fi
 
   if [[ "$mac_system" -eq 1 ]]; then
