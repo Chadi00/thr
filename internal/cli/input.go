@@ -8,33 +8,25 @@ import (
 )
 
 func readTextArgFileOrStdin(argText string, filePath string) (string, error) {
-	sources := 0
-	if argText != "" {
-		sources++
-	}
 	if filePath != "" {
-		sources++
-	}
-	if hasStdinInput() {
-		sources++
+		if argText != "" {
+			return "", fmt.Errorf("provide either text argument or --file, not both")
+		}
+		return readFile(filePath)
 	}
 
-	if sources == 0 {
-		return "", fmt.Errorf("no text provided; pass text argument, --file, or pipe stdin")
-	}
-	if sources > 1 {
-		return "", fmt.Errorf("provide exactly one text source: argument, --file, or stdin")
-	}
 	if argText != "" {
 		if argText == "-" {
-			return readFromReader(os.Stdin)
+			return readFromStdin()
 		}
 		return argText, nil
 	}
-	if filePath != "" {
-		return readFile(filePath)
+
+	if hasStdinInput() {
+		return readFromStdin()
 	}
-	return readFromReader(os.Stdin)
+
+	return "", fmt.Errorf("no text provided; pass text argument, --file, or pipe stdin")
 }
 
 func readFile(path string) (string, error) {
@@ -51,6 +43,17 @@ func readFromReader(reader io.Reader) (string, error) {
 		return "", fmt.Errorf("read stdin: %w", err)
 	}
 	return strings.TrimRight(string(body), "\n"), nil
+}
+
+func readFromStdin() (string, error) {
+	value, err := readFromReader(os.Stdin)
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", fmt.Errorf("no text provided; pass text argument, --file, or pipe stdin")
+	}
+	return value, nil
 }
 
 func hasStdinInput() bool {
