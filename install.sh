@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_MODULE="github.com/chadiek/thr/cmd/thr"
+REPO_MODULE="github.com/Chadi00/thr/cmd/thr"
 GO_TAGS="sqlite_fts5"
 
 log() {

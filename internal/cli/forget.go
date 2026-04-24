@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/chadiek/thr/internal/output"
-	"github.com/chadiek/thr/internal/store"
+	"github.com/Chadi00/thr/internal/output"
+	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
 )
 

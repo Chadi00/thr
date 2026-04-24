@@ -8,7 +8,7 @@ import (
 	"time"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	"github.com/chadiek/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/domain"
 )
 
 var ErrMemoryNotFound = errors.New("memory not found")

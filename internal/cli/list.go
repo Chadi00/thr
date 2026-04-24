@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/chadiek/thr/internal/output"
+	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
 

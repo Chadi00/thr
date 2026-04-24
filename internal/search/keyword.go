@@ -3,8 +3,8 @@ package search
 import (
 	"context"
 
-	"github.com/chadiek/thr/internal/domain"
-	"github.com/chadiek/thr/internal/store"
+	"github.com/Chadi00/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/store"
 )
 
 type KeywordSearcher struct {

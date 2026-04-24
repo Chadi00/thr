@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chadiek/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/domain"
 )
 
 func PrintMemoryAdded(w io.Writer, memory domain.Memory) {

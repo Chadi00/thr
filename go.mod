@@ -1,4 +1,4 @@
-module github.com/chadiek/thr
+module github.com/Chadi00/thr
 
 go 1.26.2
 

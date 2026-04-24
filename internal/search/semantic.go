@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/chadiek/thr/internal/domain"
-	"github.com/chadiek/thr/internal/embed"
-	"github.com/chadiek/thr/internal/store"
+	"github.com/Chadi00/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/embed"
+	"github.com/Chadi00/thr/internal/store"
 )
 
 type SemanticResult struct {

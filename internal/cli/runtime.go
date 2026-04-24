@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/chadiek/thr/internal/config"
-	"github.com/chadiek/thr/internal/embed"
-	"github.com/chadiek/thr/internal/store"
+	"github.com/Chadi00/thr/internal/config"
+	"github.com/Chadi00/thr/internal/embed"
+	"github.com/Chadi00/thr/internal/store"
 )
 
 type runtimeDeps struct {
