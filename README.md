@@ -2,7 +2,7 @@
 
 # thr
 
-**Tiny History Recall** — a local CLI for notes you can find again with **semantic** and **keyword** search.
+A local CLI for notes you can find again with **semantic** and **keyword** search.
 
 [![Latest release](https://img.shields.io/github/v/release/Chadi00/thr?style=flat-square&logo=github)](https://github.com/Chadi00/thr/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
