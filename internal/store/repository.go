@@ -300,37 +300,6 @@ func (r *Repository) KeywordSearch(ctx context.Context, query string, limit int)
 	return results, nil
 }
 
-func (r *Repository) SubstringSearch(ctx context.Context, query string, limit int) ([]domain.Memory, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, text, created_at, updated_at
-		FROM memories
-		WHERE text LIKE ?
-		ORDER BY updated_at DESC
-		LIMIT ?
-	`, "%"+query+"%", limit)
-	if err != nil {
-		return nil, fmt.Errorf("substring search query: %w", err)
-	}
-	defer rows.Close()
-
-	results := make([]domain.Memory, 0)
-	for rows.Next() {
-		memory, err := scanMemory(rows)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, memory)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate substring results: %w", err)
-	}
-	return results, nil
-}
-
 func (r *Repository) loadRecentWindow(ctx context.Context, recentWindow int) ([]domain.Memory, error) {
 	if recentWindow <= 0 {
 		recentWindow = 2000
@@ -358,30 +327,6 @@ func (r *Repository) loadRecentWindow(ctx context.Context, recentWindow int) ([]
 		return nil, fmt.Errorf("iterate recent memories: %w", err)
 	}
 	return out, nil
-}
-
-func (r *Repository) SubstringSearchRecent(ctx context.Context, query string, recentWindow int, limit int) ([]domain.Memory, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	recent, err := r.loadRecentWindow(ctx, recentWindow)
-	if err != nil {
-		return nil, err
-	}
-	needle := strings.ToLower(query)
-	if needle == "" {
-		return nil, nil
-	}
-	results := make([]domain.Memory, 0, min(limit, len(recent)))
-	for _, m := range recent {
-		if len(results) >= limit {
-			break
-		}
-		if strings.Contains(strings.ToLower(m.Text), needle) {
-			results = append(results, m)
-		}
-	}
-	return results, nil
 }
 
 func (r *Repository) RecallSearch(ctx context.Context, query string, limit int, recentWindow int, candidateLimit int) ([]domain.Memory, error) {
@@ -504,13 +449,6 @@ func (r *Repository) CountMemories(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("count memories: %w", err)
 	}
 	return count, nil
-}
-
-func (r *Repository) Vacuum(ctx context.Context) error {
-	if _, err := r.db.ExecContext(ctx, `VACUUM`); err != nil {
-		return fmt.Errorf("vacuum database: %w", err)
-	}
-	return nil
 }
 
 func upsertEmbedding(ctx context.Context, tx *sql.Tx, id int64, embedding []float32) error {

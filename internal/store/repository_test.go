@@ -94,14 +94,6 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected only memory %d after forget, got %+v", m2.ID, keywordHits)
 	}
 
-	substringHits, err := repo.SubstringSearch(ctx, "classic sports", 5)
-	if err != nil {
-		t.Fatalf("substring search: %v", err)
-	}
-	if len(substringHits) != 1 || substringHits[0].ID != m2.ID {
-		t.Fatalf("expected substring hit for memory %d, got %+v", m2.ID, substringHits)
-	}
-
 	count, err := repo.CountMemories(ctx)
 	if err != nil {
 		t.Fatalf("count memories: %v", err)
