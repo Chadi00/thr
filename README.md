@@ -4,6 +4,28 @@
 
 Useful for people and for coding agents that need a small, durable memory layer without running a server.
 
+## Platform support
+
+**Supported (first-class):**
+
+| OS | CPU | Notes |
+|----|-----|--------|
+| **macOS** | **arm64** (Apple Silicon) | Prebuilt binary in [Releases](https://github.com/Chadi00/thr/releases). Source builds need Xcode Command Line Tools and ONNX Runtime (installer uses Homebrew when possible). |
+| **macOS** | **x86_64** (Intel) | Same as above; prebuilt `thr_darwin_amd64.tar.gz` when published. |
+| **Linux** | **x86_64** | Prebuilt `thr_linux_amd64.tar.gz`. **glibc**-based distros (e.g. Ubuntu 22.04+, Debian, Fedora) are expected; release builds are produced on Ubuntu (GitHub-hosted runners). |
+| **Linux** | **arm64** (`aarch64`) | Prebuilt `thr_linux_arm64.tar.gz`; same glibc-oriented expectations. |
+
+**Building from source** additionally requires **Go 1.26+** (see `go.mod`), a **C compiler** (CGO), **SQLite dev headers** (`libsqlite3-dev` or equivalent), and a working **ONNX Runtime** shared library at runtime (macOS: Homebrew `onnxruntime`; Linux: install or provide `libonnxruntime` / `onnxruntime.so` where the embedding stack can load it).
+
+**Not supported:**
+
+- **Windows** (no installer, no release artifacts, not tested).
+- **32-bit** (`i386`, `armv7`, etc.).
+- **Non-macOS BSD**, **iOS**, **Android**, and similar — not tested; you are on your own.
+- **musl-centric** environments (e.g. stock Alpine) — not tested; linking and ONNX/SQLite may need extra work.
+
+If you need a platform outside this list, open an issue with your OS, arch, and what you tried.
+
 ## Install (macOS or Linux)
 
 **Recommended:** install a **prebuilt binary** from [GitHub Releases](https://github.com/Chadi00/thr/releases) (no local Go toolchain required):
