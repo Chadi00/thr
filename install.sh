@@ -106,10 +106,43 @@ ensure_onnx_linux() {
   warn "Install libonnxruntime manually and set ONNX_PATH if needed."
 }
 
+# Spinner frames match briandowns/spinner CharSets[11] (braille).
+_spinner_frames=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
+
 install_thr() {
   log "Installing/updating thr via go install..."
   log "Target module: $REPO_MODULE@latest"
+
+  local spin_pid
+  (
+    i=0
+    n=${#_spinner_frames[@]}
+    while true; do
+      printf '\r\033[K[thr-install] %s still working (go install)...' "${_spinner_frames[i]}" >&2
+      i=$(( (i + 1) % n ))
+      sleep 0.1
+    done
+  ) &
+  spin_pid=$!
+
+  _stop_install_spinner() {
+    kill "$spin_pid" 2>/dev/null || true
+    wait "$spin_pid" 2>/dev/null || true
+    printf '\r\033[K' >&2
+  }
+
+  # Restore default INT after cleanup so a second Ctrl-C can force-quit.
+  trap '_stop_install_spinner; trap - INT; kill -INT $$' INT
+
+  local ec=0
+  set +e
   CGO_ENABLED=1 go install -tags "$GO_TAGS" "$REPO_MODULE@latest"
+  ec=$?
+  set -e
+
+  trap - INT
+  _stop_install_spinner
+  return "$ec"
 }
 
 print_path_hint() {
