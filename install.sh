@@ -145,17 +145,60 @@ install_thr() {
   return "$ec"
 }
 
-print_path_hint() {
+_go_bin_dir() {
   local gobin
   gobin="$(go env GOBIN)"
   if [ -z "$gobin" ]; then
     gobin="$(go env GOPATH)/bin"
   fi
+  # go env may return a path with ~; expand for reliable comparisons and writes
+  gobin="${gobin/#\~/$HOME}"
+  printf '%s' "$gobin"
+}
 
-  if [[ ":$PATH:" != *":$gobin:"* ]]; then
-    warn "Add $gobin to your PATH to run thr from anywhere."
-    warn "Example: export PATH=\"$gobin:\$PATH\""
+# Shell rc file to update so `thr` is on PATH in new terminals (idempotent).
+_shell_rc_file() {
+  case "$(basename "${SHELL:-/bin/sh}")" in
+    zsh) printf '%s' "${ZDOTDIR:-$HOME}/.zshrc" ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        printf '%s' "$HOME/.bashrc"
+      elif [[ -f "$HOME/.bash_profile" ]]; then
+        printf '%s' "$HOME/.bash_profile"
+      else
+        printf '%s' "$HOME/.bashrc"
+      fi
+      ;;
+    *) printf '%s' "$HOME/.profile" ;;
+  esac
+}
+
+_THR_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
+
+ensure_gobin_in_path() {
+  local gobin
+  gobin="$(_go_bin_dir)"
+
+  if [[ ":$PATH:" == *":$gobin:"* ]]; then
+    log "Go bin is already on PATH ($gobin)."
+    return 0
   fi
+
+  local rc
+  rc="$(_shell_rc_file)"
+
+  if [[ -f "$rc" ]] && grep -qF "thr install: add Go bin" "$rc" 2>/dev/null; then
+    log "A thr PATH entry exists in $rc; open a new terminal or: source $rc"
+    return 0
+  fi
+
+  {
+    printf '\n%s\n' "$_THR_PATH_MARKER"
+    printf 'export PATH="%s:$PATH"\n' "$gobin"
+  } >>"$rc"
+
+  log "Added $gobin to PATH in $rc"
+  log "Run: source $rc   (or open a new terminal), then: thr --help"
 }
 
 main() {
@@ -181,7 +224,7 @@ main() {
   esac
 
   install_thr
-  print_path_hint
+  ensure_gobin_in_path
 
   log "Done. Re-run this same command anytime to update to the latest thr version."
   log "Verify with: thr --help"
