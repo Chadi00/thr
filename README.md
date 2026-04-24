@@ -33,6 +33,21 @@ The installer picks the right archive for your OS and CPU, checks SHA-256 checks
 | `THR_USE_SOURCE=1` | Build from source with Go + CGO instead of a release binary |
 | `THR_INSTALL_REF` | With source install: git ref to build (default: `master`) |
 
+### Uninstall
+
+Removes the `thr` binary from common install locations, deletes the default data directory `~/.thr` (database and embedding cache), and strips the `export PATH=…` block that the Linux/source installer may have appended to your shell config. It does **not** remove Homebrew’s `onnxruntime` by default (other software may depend on it).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
+```
+
+| Variable | Purpose |
+|----------|---------|
+| `THR_KEEP_DATA=1` | Keep `~/.thr` (only remove the binary and PATH snippet) |
+| `THR_UNINSTALL_ONNX=1` | Also run `brew uninstall onnxruntime` (macOS + Homebrew only) |
+
+If you used a custom database path (`THR_DB` or `--db`) outside `~/.thr`, delete that file yourself.
+
 ---
 
 ## Quick start
