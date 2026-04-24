@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-24
+
+### Fixed
+
+- macOS release smoke tests now treat an already-configured Homebrew `PATH` as a valid install outcome, so tag-driven releases succeed on GitHub's default runners.
+
+## [0.1.7] - 2026-04-24
+
+### Changed
+
+- Simplified the README install and uninstall docs to the default macOS Homebrew commands so the published instructions stay focused on the primary supported path.
+
 ## [0.1.5] - 2026-04-24
 
 ### Added
