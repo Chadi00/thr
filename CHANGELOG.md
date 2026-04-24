@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `uninstall.sh`: one-command removal of `thr`, default `~/.thr` data, and installer-added shell `PATH` lines; optional `THR_UNINSTALL_ONNX=1` and `THR_KEEP_DATA=1` (documented in the README).
+- `uninstall.sh`: one-command removal of `thr`, default `~/.thr` data, and installer-added shell `PATH` lines.
 
 ## [0.1.4] - 2026-04-24
 
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Release CI: `onnxruntime_go` builds without system ONNX headers; add `libsqlite3-dev` for CGO SQLite on Linux; remove redundant Homebrew `onnxruntime` from the macOS release job (Ubuntu 24.04 has no `libonnxruntime-dev` in default apt).
+- Release CI: `onnxruntime_go` builds without system ONNX headers, and the macOS release job no longer installs a redundant Homebrew `onnxruntime` build dependency.
 
 ## [0.1.0] - 2026-04-24
 

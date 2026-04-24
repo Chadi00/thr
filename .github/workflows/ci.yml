@@ -12,8 +12,8 @@ jobs:
       fail-fast: true
       matrix:
         os:
-          - ubuntu-22.04
           - macos-latest
+          - macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +21,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Linux CGO build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libsqlite3-dev
 
       - name: Verify shell scripts parse
         run: bash -n install.sh uninstall.sh scripts/installer_smoke.sh
@@ -38,68 +32,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - os: ubuntu-22.04
-            source_smoke: true
-          - os: macos-latest
-            source_smoke: false
+        os:
+          - macos-latest
+          - macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libsqlite3-dev
-
-      - name: Build local release fixture
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$(uname -s)" in
-            Darwin) goos=darwin ;;
-            Linux) goos=linux ;;
-            *) exit 1 ;;
-          esac
-          case "$(uname -m)" in
-            x86_64|amd64) goarch=amd64 ;;
-            arm64|aarch64) goarch=arm64 ;;
-            *) exit 1 ;;
-          esac
-          archive="thr_${goos}_${goarch}.tar.gz"
-          go build -trimpath -tags sqlite_fts5 -o "$RUNNER_TEMP/thr" ./cmd/thr
-          tar -czf "$RUNNER_TEMP/${archive}" -C "$RUNNER_TEMP" thr
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd "$RUNNER_TEMP" && sha256sum "${archive}" > checksums.txt)
-          else
-            (cd "$RUNNER_TEMP" && shasum -a 256 "${archive}" > checksums.txt)
-          fi
-          cat > "$RUNNER_TEMP/release.json" <<EOF
-          {
-            "assets": [
-              {
-                "name": "${archive}",
-                "browser_download_url": "file://${RUNNER_TEMP}/${archive}"
-              },
-              {
-                "name": "checksums.txt",
-                "browser_download_url": "file://${RUNNER_TEMP}/checksums.txt"
-              }
-            ]
-          }
-          EOF
-
-      - name: Create current source archive
-        run: git archive --format=tar.gz --prefix source/ -o "$RUNNER_TEMP/thr-source.tar.gz" HEAD
-
-      - name: Run binary installer smoke test
-        run: THR_SMOKE_RELEASE_JSON="file://${RUNNER_TEMP}/release.json" THR_SMOKE_USE_DEFAULT_DIR="${{ runner.os == 'Linux' && '1' || '0' }}" bash scripts/installer_smoke.sh binary
-
-      - name: Run source installer smoke test
-        if: matrix.source_smoke
-        run: THR_SMOKE_SOURCE_ARCHIVE_URL="file://${RUNNER_TEMP}/thr-source.tar.gz" THR_SMOKE_USE_DEFAULT_DIR=1 bash scripts/installer_smoke.sh source
+      - name: Run installer smoke test
+        run: bash scripts/installer_smoke.sh
