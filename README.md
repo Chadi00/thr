@@ -25,7 +25,7 @@ The installer picks the right archive for your OS and CPU, checks SHA-256 checks
 
 | Variable | Purpose |
 |----------|---------|
-| `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.1` |
+| `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.2` |
 | `GITHUB_TOKEN` | Optional; higher rate limits for GitHub API when resolving releases |
 | `THR_USER_BIN` | Linux install dir override (default: `~/.local/bin`) |
 | `THR_USE_SOURCE=1` | Build from source with Go + CGO instead of a release binary |
@@ -58,7 +58,7 @@ Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to downlo
 | `thr list` | List memories (with ids) |
 | `thr show <id>` | Print one memory |
 | `thr ask <question>` | Semantic search (meaning, not an LLM answer) |
-| `thr search <query>` | Text recall: FTS + substring + fuzzy ranking |
+| `thr search <query>` | Text recall: FTS + substring + fuzzy / subsequence ranking (recent window) |
 | `thr edit <id> <text>` · `thr edit <id> -` | Replace a memory |
 | `thr forget <id>` | Delete a memory |
 | `thr stats` | Database path and count |
@@ -77,7 +77,7 @@ Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to downlo
 | Database | `~/.thr/thr.db` |
 | Embedding cache | `~/.thr/models` (`THR_MODEL_CACHE` overrides) |
 
-Semantic vectors use [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) (768-d) with sqlite-vec. Text recall uses SQLite FTS5 plus bounded substring and fuzzy ranking.
+Semantic vectors use [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) (768-d) with sqlite-vec. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
 
 Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
 
@@ -98,3 +98,5 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 Issues and pull requests are welcome. Include your OS and the exact command you ran if something breaks.
 
 **Maintainers:** publishing is tag-driven — push a semver tag and GitHub Actions builds CGO binaries and uploads them to a GitHub Release.
+
+**v0.1.2** — `thr search` now considers subsequence (abbreviation-style) matches against recent memories, not only exact substrings, so results align with the CLI’s “fuzzy recall” description.

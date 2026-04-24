@@ -127,6 +127,35 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	}
 }
 
+func TestRecallSearchFuzzySubsequence(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-fuzzy-subseq.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+	memory, err := repo.AddMemory(ctx, "rust ownership tips", vectorOf(0.3))
+	if err != nil {
+		t.Fatalf("add memory: %v", err)
+	}
+	// "rst" is not a contiguous substring of "rust" but matches as a subsequence.
+	hits, err := repo.RecallSearch(ctx, "rst", 5, 200, 50)
+	if err != nil {
+		t.Fatalf("recall search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].ID != memory.ID {
+		t.Fatalf("expected subsequence match for 'rst' -> 'rust', got %+v", hits)
+	}
+}
+
 func TestRecallSearchEscapesLikePattern(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "thr-like-test.db")

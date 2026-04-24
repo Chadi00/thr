@@ -331,44 +331,55 @@ func (r *Repository) SubstringSearch(ctx context.Context, query string, limit in
 	return results, nil
 }
 
-func (r *Repository) SubstringSearchRecent(ctx context.Context, query string, recentWindow int, limit int) ([]domain.Memory, error) {
+func (r *Repository) loadRecentWindow(ctx context.Context, recentWindow int) ([]domain.Memory, error) {
 	if recentWindow <= 0 {
 		recentWindow = 2000
 	}
-	if limit <= 0 {
-		limit = 10
-	}
-
-	escaped := escapeLikePattern(strings.ToLower(query))
-	pattern := "%" + escaped + "%"
 	rows, err := r.db.QueryContext(ctx, `
-		WITH recent AS (
-			SELECT id, text, created_at, updated_at
-			FROM memories
-			ORDER BY updated_at DESC
-			LIMIT ?
-		)
 		SELECT id, text, created_at, updated_at
-		FROM recent
-		WHERE LOWER(text) LIKE ? ESCAPE '\'
+		FROM memories
 		ORDER BY updated_at DESC
 		LIMIT ?
-	`, recentWindow, pattern, limit)
+	`, recentWindow)
 	if err != nil {
-		return nil, fmt.Errorf("recent substring search query: %w", err)
+		return nil, fmt.Errorf("load recent memories: %w", err)
 	}
 	defer rows.Close()
 
-	results := make([]domain.Memory, 0)
+	out := make([]domain.Memory, 0, recentWindow)
 	for rows.Next() {
 		memory, err := scanMemory(rows)
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, memory)
+		out = append(out, memory)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate recent substring results: %w", err)
+		return nil, fmt.Errorf("iterate recent memories: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repository) SubstringSearchRecent(ctx context.Context, query string, recentWindow int, limit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	recent, err := r.loadRecentWindow(ctx, recentWindow)
+	if err != nil {
+		return nil, err
+	}
+	needle := strings.ToLower(query)
+	if needle == "" {
+		return nil, nil
+	}
+	results := make([]domain.Memory, 0, min(limit, len(recent)))
+	for _, m := range recent {
+		if len(results) >= limit {
+			break
+		}
+		if strings.Contains(strings.ToLower(m.Text), needle) {
+			results = append(results, m)
+		}
 	}
 	return results, nil
 }
@@ -405,17 +416,53 @@ func (r *Repository) RecallSearch(ctx context.Context, query string, limit int, 
 	}
 
 	if len(candidates) < candidateLimit {
-		recentLimit := candidateLimit - len(candidates)
-		recentHits, err := r.SubstringSearchRecent(ctx, query, recentWindow, recentLimit)
+		recent, err := r.loadRecentWindow(ctx, recentWindow)
 		if err != nil {
 			return nil, err
 		}
-		for _, memory := range recentHits {
-			if _, exists := seen[memory.ID]; exists {
-				continue
+		need := candidateLimit - len(candidates)
+		needle := strings.ToLower(strings.TrimSpace(query))
+		if needle != "" {
+			for _, memory := range recent {
+				if need <= 0 {
+					break
+				}
+				if _, exists := seen[memory.ID]; exists {
+					continue
+				}
+				if strings.Contains(strings.ToLower(memory.Text), needle) {
+					seen[memory.ID] = struct{}{}
+					candidates = append(candidates, memory)
+					need--
+				}
 			}
-			seen[memory.ID] = struct{}{}
-			candidates = append(candidates, memory)
+		}
+		if len(candidates) < candidateLimit {
+			need = candidateLimit - len(candidates)
+			type extraHit struct {
+				memory domain.Memory
+				score  int
+			}
+			extras := make([]extraHit, 0)
+			for _, memory := range recent {
+				if _, exists := seen[memory.ID]; exists {
+					continue
+				}
+				if s := fuzzyScore(query, memory.Text); s >= 0 {
+					extras = append(extras, extraHit{memory: memory, score: s})
+				}
+			}
+			sort.SliceStable(extras, func(i, j int) bool {
+				if extras[i].score != extras[j].score {
+					return extras[i].score > extras[j].score
+				}
+				return extras[i].memory.UpdatedAt.After(extras[j].memory.UpdatedAt)
+			})
+			for i := 0; i < len(extras) && need > 0; i++ {
+				seen[extras[i].memory.ID] = struct{}{}
+				candidates = append(candidates, extras[i].memory)
+				need--
+			}
 		}
 	}
 
@@ -521,13 +568,6 @@ func scanMemory(rows *sql.Rows) (domain.Memory, error) {
 
 func rollback(tx *sql.Tx) {
 	_ = tx.Rollback()
-}
-
-func escapeLikePattern(input string) string {
-	escaped := strings.ReplaceAll(input, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `%`, `\%`)
-	escaped = strings.ReplaceAll(escaped, `_`, `\_`)
-	return escaped
 }
 
 func buildFTSQuery(query string) string {
