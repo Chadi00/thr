@@ -6,11 +6,34 @@ Useful for people and for coding agents that need a small, durable memory layer 
 
 ## Install (macOS or Linux)
 
+**Recommended:** install a **prebuilt binary** from [GitHub Releases](https://github.com/Chadi00/thr/releases) (no local Go toolchain required):
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-The installer downloads a **GitHub source archive** for the requested revision and runs `go install ./cmd/thr` from that tree, so you always get the same sources as the GitHub UI (no stale `GOPROXY` pseudo-versions for branch installs). Override the revision with `THR_INSTALL_REF` (branch name, full commit SHA, or tag like `v0.1.0`).
+The script picks the correct `thr_<os>_<arch>.tar.gz`, verifies SHA-256 checksums from `checksums.txt`, and installs `thr` to a standard location (macOS: Homebrew or `/opt/homebrew/bin` when possible; Linux: `~/.local/bin` by default). Useful environment variables:
+
+- `THR_VERSION` — `latest` (default) or an exact tag (for example `v0.1.0`).
+- `GITHUB_TOKEN` — optional; raises GitHub API rate limits for the release metadata request.
+- `THR_USER_BIN` — override the Linux install directory (default `~/.local/bin`).
+- `THR_USE_SOURCE=1` — build from source with Go + CGO instead of using a release binary.
+- `THR_INSTALL_REF` — when using `THR_USE_SOURCE=1`, which git ref to build (branch, tag, or commit; default `master`).
+
+**Go install** (works best with a **semver tag**, not a moving branch):
+
+```bash
+go install -tags sqlite_fts5 github.com/Chadi00/thr/cmd/thr@v0.1.0
+```
+
+### Publishing a release (maintainers)
+
+Pushing a version tag builds native binaries (CGO) on GitHub Actions and uploads them to a GitHub Release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ## Commands
 
