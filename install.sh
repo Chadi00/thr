@@ -175,6 +175,73 @@ _shell_rc_file() {
 
 _THR_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
 
+# Copy built thr into a system-wide bin directory. Returns 0 on success.
+_install_thr_to_one_dir() {
+  local src=$1
+  local dir=$2
+  local dst="${dir}/thr"
+
+  [[ -d "$dir" ]] || return 1
+  if [[ -w "$dir" ]]; then
+    if install -m 0755 "$src" "$dst"; then
+      log "Installed thr to $dst"
+      return 0
+    fi
+    return 1
+  fi
+  log "Installing thr to $dst (enter your macOS password if prompted)..."
+  if sudo install -m 0755 "$src" "$dst"; then
+    log "Installed thr to $dst"
+    return 0
+  fi
+  return 1
+}
+
+# macOS: place the built binary where normal shells already look (no PATH edits, no
+# "source" step). Tries: Homebrew's bin, then /opt/homebrew/bin, /usr/local/bin, using
+# sudo only when the directory is not user-writable.
+install_thr_to_system_path_macos() {
+  local src
+  local dir
+
+  src="$(_go_bin_dir)/thr"
+  if [[ ! -f "$src" ]]; then
+    warn "go install did not produce: $src"
+    return 1
+  fi
+
+  if need_cmd brew; then
+    if _install_thr_to_one_dir "$src" "$(brew --prefix)/bin"; then
+      return 0
+    fi
+  fi
+
+  for dir in /opt/homebrew/bin /usr/local/bin; do
+    if _install_thr_to_one_dir "$src" "$dir"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# `curl | bash` uses a non-login bash with a minimal PATH. Prepend the usual Mac CLI
+# locations so a post-install `command -v thr` matches what zsh/Terminal users get.
+_prepend_default_macos_path() {
+  local d
+  for d in /opt/homebrew/bin /usr/local/bin; do
+    if [[ -d "$d" ]]; then
+      export PATH="$d:$PATH"
+    fi
+  done
+  if need_cmd brew; then
+    d="$(brew --prefix)/bin"
+    if [[ -d "$d" ]]; then
+      export PATH="$d:$PATH"
+    fi
+  fi
+}
+
 ensure_gobin_in_path() {
   local gobin
   gobin="$(_go_bin_dir)"
@@ -198,11 +265,60 @@ ensure_gobin_in_path() {
   } >>"$rc"
 
   log "Added $gobin to PATH in $rc"
-  log "Run: source $rc   (or open a new terminal), then: thr --help"
+  log "If thr is not found in this window: source $rc   (or open a new terminal)"
+}
+
+# `go install` and PATH updates apply to the install *process* only. The shell you type in
+# after `curl | bash` is a parent process and will not see PATH until you `source` the rc
+# (or start a new terminal). This script exports PATH for the install process and, below,
+# runs the same `source` in a *subshell* to verify the rc. That does not replace sourcing
+# in your interactive session.
+apply_gobin_to_path_in_this_process() {
+  local gobin
+  gobin="$(_go_bin_dir)"
+  export PATH="$gobin:$PATH"
+}
+
+# Run the same `source` for the rc file we just updated (e.g. ~/.zshrc), in a matching
+# shell, so the installer actually executes a source step (separate from your login shell).
+source_shell_rc_in_subshell() {
+  local rc qrc
+  local ok=0
+
+  rc="$(_shell_rc_file)"
+  if [[ ! -f "$rc" ]]; then
+    return 0
+  fi
+  qrc=$(printf '%q' "$rc")
+
+  case "$(basename "${SHELL:-/bin/sh}")" in
+    zsh)
+      if command -v zsh >/dev/null 2>&1 && zsh -c "set -e; source $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
+        ok=1
+      fi
+      ;;
+    bash)
+      if command -v bash >/dev/null 2>&1 && bash -c "set -e; source $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
+        ok=1
+      fi
+      ;;
+    *)
+      if sh -c "set -e; . $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
+        ok=1
+      fi
+      ;;
+  esac
+
+  if [[ "$ok" -eq 1 ]]; then
+    log "Sourced $rc in a child shell; in *this* terminal you still need: source $rc  (or a new tab) before thr is found"
+  else
+    warn "Could not confirm \`source $rc\` + thr; check $rc and PATH under $(_go_bin_dir)"
+  fi
 }
 
 main() {
   local os
+  local mac_system=0
   os="$(uname -s)"
 
   case "$os" in
@@ -224,10 +340,40 @@ main() {
   esac
 
   install_thr
-  ensure_gobin_in_path
 
-  log "Done. Re-run this same command anytime to update to the latest thr version."
-  log "Verify with: thr --help"
+  if [[ "$os" == "Darwin" ]]; then
+    if install_thr_to_system_path_macos; then
+      mac_system=1
+    else
+      log "Falling back: adding Go bin to your shell config (or use: export PATH=\"$(_go_bin_dir):\$PATH\")."
+      ensure_gobin_in_path
+    fi
+  else
+    ensure_gobin_in_path
+  fi
+
+  if [[ "$os" == "Darwin" ]]; then
+    _prepend_default_macos_path
+  fi
+  if [[ "$mac_system" -eq 0 ]]; then
+    apply_gobin_to_path_in_this_process
+  fi
+  if [[ "$mac_system" -eq 0 ]]; then
+    source_shell_rc_in_subshell
+  fi
+
+  if command -v thr >/dev/null 2>&1; then
+    log "Ready: $(command -v thr)"
+  else
+    warn "thr is not on PATH in this install session; on macOS, try opening a new terminal, or: export PATH=\"$(_go_bin_dir):\$PATH\""
+  fi
+
+  if [[ "$mac_system" -eq 1 ]]; then
+    log "On macOS, thr is on your default PATH. Run: thr --help   (re-run this installer anytime to update)"
+  else
+    log "If thr is not found in this window: source $(_shell_rc_file)  (or open a new tab)"
+    log "Re-run this same command anytime to update to the latest thr version. Verify: thr --help"
+  fi
 }
 
 main "$@"

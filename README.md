@@ -12,9 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 
 This command:
 
-- installs required dependencies (Go toolchain, CGO build tools, ONNX Runtime) when possible
-- installs `thr` globally via `go install`
-- updates to the latest `thr` version when re-run
+- on macOS: installs required dependencies (Go, Xcode CLT, ONNX Runtime) when possible, builds with `go install`, then **copies `thr` into a standard PATH location** (e.g. `$(brew --prefix)/bin` or `/opt/homebrew/bin` / `/usr/local/bin`); re-run the same line anytime to update
+- on Linux: same dependency and build flow; the script adds the Go `bin` directory to your shell config if it is not already on your PATH (you may need to `source` your rc or open a new tab once in edge cases)
 
 If you are using a private fork/repo, use an authenticated install command:
 
