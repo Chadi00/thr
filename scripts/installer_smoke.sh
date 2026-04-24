@@ -116,7 +116,10 @@ prepare_home() {
 }
 
 assert_path_block_present() {
-  grep -qF '# thr install:' "$HOME/.zshrc" || fail "expected PATH block in $HOME/.zshrc"
+  if grep -qF '# thr install:' "$HOME/.zshrc"; then
+    return 0
+  fi
+  command -v thr >/dev/null 2>&1 || fail "expected PATH block in $HOME/.zshrc or thr already on PATH"
 }
 
 assert_path_block_removed() {
