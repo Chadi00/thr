@@ -15,25 +15,17 @@ Retrieval runs **on your machine** — no cloud API for search.
 
 ## Install
 
-**macOS** — one command downloads the latest verified release binary, installs `thr` into Homebrew's bin directory, installs `onnxruntime` if needed, and prefetches the embedding model:
+Requires macOS with [Homebrew](https://brew.sh) installed.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-Install [Homebrew](https://brew.sh) first. The installer uses Homebrew for `onnxruntime`, installs the matching `thr_darwin_<arch>.tar.gz` release into `$(brew --prefix)/bin`, verifies SHA-256 checksums, and adds that bin directory to your shell PATH if needed.
-
-The install flow is intentionally no-config: it always targets the latest macOS release with the standard Homebrew-based setup.
-
 ### Uninstall
-
-Removes the `thr` binary from the standard Homebrew bin location, deletes the default data directory `~/.thr` (database and embedding cache), and strips the installer-managed `export PATH=…` block from your shell config when one was added. It does **not** remove Homebrew's `onnxruntime` automatically, since other software may depend on it.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
 ```
-
-If you used a custom database path (`THR_DB` or `--db`) outside `~/.thr`, delete that file yourself. If you also want to remove the Homebrew runtime dependency, run `brew uninstall onnxruntime` separately.
 
 ---
 
