@@ -621,6 +621,12 @@ run_binary_install_flow() {
   local os="$1"
   local mac_system=0
 
+  # Prebuilt thr still dlopen()s the system ONNX Runtime on macOS (same as source builds).
+  # Without Homebrew onnxruntime, prefetch/embed steps fail with "onnxruntime.so" not found.
+  if [[ "$os" == "Darwin" ]]; then
+    ensure_onnx_macos || warn "Embedding features need ONNX Runtime. Install with: brew install onnxruntime"
+  fi
+
   install_thr_from_github_release || return 1
 
   if [[ "$os" == "Darwin" ]]; then
