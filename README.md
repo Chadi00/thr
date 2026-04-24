@@ -27,10 +27,14 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 
 ```bash
 thr add "the user prefers Rust for new services"
+thr list
 thr ask "what language should we use for a new service?"
 thr search "Rust"
-thr list
+thr edit 1 "the user prefers Go for new services"
+thr forget 1
 ```
+
+Use the numeric `id` from `thr list` (or the output of `thr ask` / `thr search`) for `edit` and `forget`.
 
 ### Where data lives
 
