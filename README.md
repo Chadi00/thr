@@ -12,10 +12,6 @@ One line (macOS or Linux):
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-**macOS:** The installer pulls in what it needs (for example Go, Xcode Command Line Tools, ONNX Runtime where Homebrew is available), builds the binary, and places `thr` on your PATH (often `$(brew --prefix)/bin`, `/opt/homebrew/bin`, or `/usr/local/bin`). Re-run the same command to update.
-
-**Linux:** Same idea: dependencies, build, then ensure Go’s `bin` is on your PATH (the script may add it to your shell config). Open a new terminal or `source` your rc file if `thr` is not found right away.
-
 ## Usage
 
 | Command | What it does |
