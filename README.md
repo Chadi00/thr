@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 
 The installer picks the right archive for your OS and CPU, checks SHA-256 checksums from the release, and places the binary where your PATH can find it (see [Releases](https://github.com/Chadi00/thr/releases) if you prefer a manual download).
 
+**macOS:** install [Homebrew](https://brew.sh) first. The default installer uses it to place `thr` on your PATH (e.g. `/opt/homebrew/bin`) and to install **ONNX Runtime** (`onnxruntime`), which embedding commands need. Without Homebrew, install dependencies yourself or use `THR_USE_SOURCE=1` after satisfying the [source-build requirements](#platform-support).
+
 | Variable | Purpose |
 |----------|---------|
 | `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.2` |
@@ -84,7 +86,7 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 
 ## Platform support
 
-**First-class:** macOS **arm64** and **x86_64**, Linux **x86_64** and **arm64** (glibc-oriented distros; release builds are from Ubuntu runners). Prebuilt archives are attached to [Releases](https://github.com/Chadi00/thr/releases).
+**First-class:** macOS **arm64** and **x86_64**, Linux **x86_64** and **arm64** (glibc-oriented distros; release builds are from Ubuntu runners). Prebuilt archives are attached to [Releases](https://github.com/Chadi00/thr/releases). The recommended macOS install path assumes **Homebrew** is available (see [Install](#install)).
 
 **Source builds** need Go **1.26+**, CGO, SQLite dev headers, and a loadable **ONNX Runtime** (e.g. Homebrew `onnxruntime` on macOS; Linux distro packages or a path where the embedding stack can load `libonnxruntime`).
 
