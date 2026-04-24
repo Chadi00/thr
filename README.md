@@ -1,71 +1,47 @@
 # thr
 
-`thr` (Tiny History Recall) is a local-first memory CLI for coding agents.
+**Tiny History Recall** — a local-first CLI that stores short notes and answers questions with semantic + keyword search. Data stays on your machine; nothing is sent to a cloud API for retrieval.
 
-## Install or update in one command
+Ideal for coding agents and humans who want a durable, grep-friendly memory layer without running a server.
 
-Run this from anywhere:
+## Install
+
+One line (macOS or Linux):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-This command:
+**macOS:** The installer pulls in what it needs (for example Go, Xcode Command Line Tools, ONNX Runtime where Homebrew is available), builds the binary, and places `thr` on your PATH (often `$(brew --prefix)/bin`, `/opt/homebrew/bin`, or `/usr/local/bin`). Re-run the same command to update.
 
-- on macOS: installs required dependencies (Go, Xcode CLT, ONNX Runtime) when possible, builds with `go install`, then **copies `thr` into a standard PATH location** (e.g. `$(brew --prefix)/bin` or `/opt/homebrew/bin` / `/usr/local/bin`); re-run the same line anytime to update
-- on Linux: same dependency and build flow; the script adds the Go `bin` directory to your shell config if it is not already on your PATH (you may need to `source` your rc or open a new tab once in edge cases)
+**Linux:** Same idea: dependencies, build, then ensure Go’s `bin` is on your PATH (the script may add it to your shell config). Open a new terminal or `source` your rc file if `thr` is not found right away.
 
-If you are using a private fork/repo, use an authenticated install command:
+## Usage
 
-```bash
-gh api repos/Chadi00/thr/contents/install.sh?ref=master --jq '.content' | base64 --decode | bash
-```
+| Command | What it does |
+|--------|----------------|
+| `thr add <text>` | Store a memory |
+| `thr list` | List stored memories |
+| `thr ask <question>` | Semantic search over memories |
+| `thr search <query>` | Keyword (FTS) search |
+| `thr edit <id> <text>` | Replace a memory’s text |
+| `thr forget <id>` | Delete a memory |
 
-## Commands
-
-- `thr add <text>` stores a memory.
-- `thr list` lists stored memories.
-- `thr ask <question>` runs semantic retrieval over memories.
-- `thr search <query>` runs keyword search over memories.
-- `thr edit <id> <text>` replaces memory text.
-- `thr forget <id>` deletes a memory.
-
-## Storage and search
-
-- SQLite database at `~/.thr/thr.db` by default.
-- Semantic vectors in `sqlite-vec` (`float[768]`) for `BAAI/bge-base-en-v1.5`.
-- Keyword search via SQLite FTS5.
-
-## Build prerequisites
-
-### CGO + C toolchain
-
-This project uses `github.com/mattn/go-sqlite3` and `sqlite-vec` CGO bindings.
-
-- macOS: Xcode Command Line Tools
-- Linux: gcc/clang + libc headers
-
-### ONNX Runtime
-
-Embeddings use `github.com/bdombro/fastembed-go` with ONNX Runtime.
-
-- macOS: `brew install onnxruntime`
-- If auto-detection fails, set `ONNX_PATH` to your ONNX Runtime shared library.
-
-Examples:
+### Examples
 
 ```bash
-export ONNX_PATH="/opt/homebrew/lib/libonnxruntime.dylib"
-# Linux example:
-# export ONNX_PATH="/path/to/libonnxruntime.so"
+thr add "the user prefers Rust for new services"
+thr ask "what language should we use for a new service?"
+thr search "Rust"
+thr list
 ```
 
-## Run locally
+### Where data lives
 
-```bash
-go run ./cmd/thr add "the user likes sports cars"
-go run ./cmd/thr ask "what type of car does the user like?"
-go run ./cmd/thr search "sports cars"
-go run ./cmd/thr list
-```
+- **Database:** `~/.thr/thr.db` by default
+- **Semantic index:** `sqlite-vec` vectors (`float[768]`) for [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5)
+- **Keywords:** SQLite FTS5
 
+## Contributing
+
+Issues and pull requests are welcome. If the installer or CLI misbehaves, say your OS and what you ran.
