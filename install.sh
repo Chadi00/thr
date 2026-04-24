@@ -385,7 +385,7 @@ main() {
 
   log "Ensuring the embedding model is in cache (first install may take a minute)..."
   if prefetch_embedding_model; then
-    log "Embedding model is available; add/ask will not block on a first-time download."
+    log "Embedding model is available."
   else
     warn "Could not run thr prefetch. The model will download on the first add, ask, or edit."
   fi
