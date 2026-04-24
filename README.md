@@ -46,7 +46,7 @@ thr search "cli docs"
 
 Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to download the embedding model before the first slow `add` or `ask`.
 
-**Scripts and agents:** add `--json` to `list`, `show`, `ask`, or `search` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`. Shell completion: `source <(thr completion zsh)`.
+**Scripts and agents:** add `--json` to `list`, `show`, `ask`, or `search` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
 
 ---
 
@@ -64,7 +64,6 @@ Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to downlo
 | `thr stats` | Database path and count |
 | `thr prefetch` | Cache the embedding model |
 | `thr version` | Build version (`-v` / `--version` also work) |
-| `thr completion bash` (or `zsh`, `fish`) | Print a shell completion script |
 
 **Globals:** `--db <path>` or `THR_DB` for the database. On read commands, `--json` emits stable JSON for scripts and agents.
 

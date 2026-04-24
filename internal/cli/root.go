@@ -31,7 +31,6 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to SQLite database (overrides THR_DB; default ~/.thr/thr.db)")
 	rootCmd.PersistentFlags().Bool("json", false, "Emit JSON output for read-oriented commands")
 	rootCmd.Flags().BoolP("version", "v", false, "Print version information")
-	_ = rootCmd.RegisterFlagCompletionFunc("db", cobra.NoFileCompletions)
 
 	rootCmd.AddCommand(
 		newAddCommand(&dbPath),
@@ -43,7 +42,6 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 		newForgetCommand(&dbPath),
 		newStatsCommand(&dbPath),
 		newVersionCommand(version, commit, buildDate),
-		newCompletionCommand(),
 		newPrefetchCommand(&dbPath),
 	)
 
