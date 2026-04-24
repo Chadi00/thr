@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/Chadi00/thr/internal/domain"
+	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 )
 
 var ErrMemoryNotFound = errors.New("memory not found")
@@ -95,6 +95,30 @@ func (r *Repository) ListMemories(ctx context.Context, limit int) ([]domain.Memo
 	return memories, nil
 }
 
+func (r *Repository) GetMemory(ctx context.Context, id int64) (domain.Memory, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, text, created_at, updated_at
+		FROM memories
+		WHERE id = ?
+	`, id)
+
+	var (
+		memory                         domain.Memory
+		createdUnixMillis, updatedUnix int64
+	)
+	err := row.Scan(&memory.ID, &memory.Text, &createdUnixMillis, &updatedUnix)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("fetch memory %d: %w", id, err)
+	}
+
+	memory.CreatedAt = time.UnixMilli(createdUnixMillis).UTC()
+	memory.UpdatedAt = time.UnixMilli(updatedUnix).UTC()
+	return memory, nil
+}
+
 func (r *Repository) EditMemory(ctx context.Context, id int64, text string, embedding []float32) (domain.Memory, error) {
 	now := time.Now().UTC()
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -134,6 +158,42 @@ func (r *Repository) EditMemory(ctx context.Context, id int64, text string, embe
 	}
 
 	return memory, nil
+}
+
+func (r *Repository) ImportMemory(ctx context.Context, text string, createdAt time.Time, updatedAt time.Time, embedding []float32) (domain.Memory, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("begin import memory transaction: %w", err)
+	}
+	defer rollback(tx)
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO memories (text, created_at, updated_at)
+		VALUES (?, ?, ?)
+	`, text, createdAt.UnixMilli(), updatedAt.UnixMilli())
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("import memory row: %w", err)
+	}
+
+	memoryID, err := res.LastInsertId()
+	if err != nil {
+		return domain.Memory{}, fmt.Errorf("get imported memory id: %w", err)
+	}
+
+	if err := upsertEmbedding(ctx, tx, memoryID, embedding); err != nil {
+		return domain.Memory{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return domain.Memory{}, fmt.Errorf("commit import memory transaction: %w", err)
+	}
+
+	return domain.Memory{
+		ID:        memoryID,
+		Text:      text,
+		CreatedAt: createdAt.UTC(),
+		UpdatedAt: updatedAt.UTC(),
+	}, nil
 }
 
 func (r *Repository) ForgetMemory(ctx context.Context, id int64) error {
@@ -236,6 +296,53 @@ func (r *Repository) KeywordSearch(ctx context.Context, query string, limit int)
 	}
 
 	return results, nil
+}
+
+func (r *Repository) SubstringSearch(ctx context.Context, query string, limit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, text, created_at, updated_at
+		FROM memories
+		WHERE text LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`, "%"+query+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("substring search query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]domain.Memory, 0)
+	for rows.Next() {
+		memory, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, memory)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate substring results: %w", err)
+	}
+	return results, nil
+}
+
+func (r *Repository) CountMemories(ctx context.Context) (int64, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memories`)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count memories: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Repository) Vacuum(ctx context.Context) error {
+	if _, err := r.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("vacuum database: %w", err)
+	}
+	return nil
 }
 
 func upsertEmbedding(ctx context.Context, tx *sql.Tx, id int64, embedding []float32) error {

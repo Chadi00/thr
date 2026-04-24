@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Chadi00/thr/internal/search"
@@ -14,7 +15,8 @@ func newAskCommand(dbPath *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
-		Short: "Semantically search memories and return relevant matches",
+		Short: "Retrieve semantically similar memories for a question",
+		Long:  "ask performs vector retrieval over stored memories and returns the closest matches; it does not generate LLM answers.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -30,11 +32,15 @@ func newAskCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 
+			if isJSONOutput(cmd) {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(results)
+			}
 			if len(results) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no matching memories")
 				return nil
 			}
-
 			for _, result := range results {
 				if withDistance {
 					fmt.Fprintf(cmd.OutOrStdout(), "%d\t%.6f\t%s\n", result.Memory.ID, result.Distance, result.Memory.Text)

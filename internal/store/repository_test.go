@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +12,9 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "thr-test.db")
 	db, err := Open(dbPath)
 	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() {
@@ -37,6 +41,13 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	}
 	if len(memories) != 2 {
 		t.Fatalf("expected 2 memories, got %d", len(memories))
+	}
+	got, err := repo.GetMemory(ctx, m1.ID)
+	if err != nil {
+		t.Fatalf("get memory: %v", err)
+	}
+	if got.Text != m1.Text {
+		t.Fatalf("unexpected get memory text: %q", got.Text)
 	}
 
 	keywordHits, err := repo.KeywordSearch(ctx, "sports", 5)
@@ -81,6 +92,30 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	}
 	if len(keywordHits) != 1 || keywordHits[0].ID != m2.ID {
 		t.Fatalf("expected only memory %d after forget, got %+v", m2.ID, keywordHits)
+	}
+
+	substringHits, err := repo.SubstringSearch(ctx, "classic sports", 5)
+	if err != nil {
+		t.Fatalf("substring search: %v", err)
+	}
+	if len(substringHits) != 1 || substringHits[0].ID != m2.ID {
+		t.Fatalf("expected substring hit for memory %d, got %+v", m2.ID, substringHits)
+	}
+
+	count, err := repo.CountMemories(ctx)
+	if err != nil {
+		t.Fatalf("count memories: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 memory after forget, got %d", count)
+	}
+
+	imported, err := repo.ImportMemory(ctx, "imported memory", m1.CreatedAt, m1.UpdatedAt, vectorA)
+	if err != nil {
+		t.Fatalf("import memory: %v", err)
+	}
+	if imported.ID == 0 {
+		t.Fatal("expected imported memory id to be set")
 	}
 }
 

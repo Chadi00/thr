@@ -26,6 +26,9 @@ func newListCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 
+			if isJSONOutput(cmd) {
+				return output.PrintMemoryListJSON(cmd.OutOrStdout(), memories)
+			}
 			output.PrintMemoryList(cmd.OutOrStdout(), memories)
 			return nil
 		},

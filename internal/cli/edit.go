@@ -10,10 +10,13 @@ import (
 )
 
 func newEditCommand(dbPath *string) *cobra.Command {
+	var filePath string
+
 	cmd := &cobra.Command{
-		Use:   "edit <id> <text>",
+		Use:   "edit <id> [text|-]",
 		Short: "Replace a memory",
-		Args:  cobra.ExactArgs(2),
+		Long:  "Replace a memory using text argument, --file path, or piped stdin. Use '-' to read stdin explicitly.",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			deps, cleanup, err := initRuntime(*dbPath, true, false)
@@ -27,7 +30,14 @@ func newEditCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("invalid id %q: %w", args[0], err)
 			}
 
-			text := args[1]
+			argText := ""
+			if len(args) == 2 {
+				argText = args[1]
+			}
+			text, err := readTextArgFileOrStdin(argText, filePath)
+			if err != nil {
+				return err
+			}
 			embedding, err := deps.embedder.PassageEmbed(text)
 			if err != nil {
 				return fmt.Errorf("embed memory text: %w", err)
@@ -45,6 +55,7 @@ func newEditCommand(dbPath *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Read replacement text from file path")
 
 	return cmd
 }
