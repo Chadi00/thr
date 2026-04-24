@@ -25,7 +25,7 @@ The installer picks the right archive for your OS and CPU, checks SHA-256 checks
 
 | Variable | Purpose |
 |----------|---------|
-| `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.0` |
+| `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.1` |
 | `GITHUB_TOKEN` | Optional; higher rate limits for GitHub API when resolving releases |
 | `THR_USER_BIN` | Linux install dir override (default: `~/.local/bin`) |
 | `THR_USE_SOURCE=1` | Build from source with Go + CGO instead of a release binary |

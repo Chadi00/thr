@@ -147,7 +147,7 @@ _thr_validate_release_version() {
       return 0
       ;;
     *)
-      warn "Invalid THR_VERSION (use latest or a tag like v0.1.0): $1"
+      warn "Invalid THR_VERSION (use latest or a tag like v0.1.1): $1"
       return 1
       ;;
   esac
@@ -248,7 +248,7 @@ install_thr_from_github_release() {
 
   local json
   if ! json="$(_thr_curl_github_json "$(_thr_release_api_url "$THR_VERSION")")"; then
-    warn "No GitHub release found for THR_VERSION=$THR_VERSION (publish a tag like v0.1.0 first)."
+    warn "No GitHub release found for THR_VERSION=$THR_VERSION (publish a tag like v0.1.1 first)."
     return 1
   fi
 
