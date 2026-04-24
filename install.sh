@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_MODULE="github.com/Chadi00/thr/cmd/thr"
+INSTALL_REF="${THR_INSTALL_REF:-master}"
 GO_TAGS="sqlite_fts5"
 
 log() {
@@ -111,7 +112,7 @@ _spinner_frames=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
 
 install_thr() {
   log "Installing/updating thr via go install..."
-  log "Target module: $REPO_MODULE@latest"
+  log "Target module: $REPO_MODULE@$INSTALL_REF"
 
   local spin_pid
   (
@@ -136,7 +137,7 @@ install_thr() {
 
   local ec=0
   set +e
-  CGO_ENABLED=1 go install -tags "$GO_TAGS" "$REPO_MODULE@latest"
+  CGO_ENABLED=1 go install -tags "$GO_TAGS" "$REPO_MODULE@$INSTALL_REF"
   ec=$?
   set -e
 
@@ -349,7 +350,7 @@ main() {
       ;;
     *)
       warn "Unsupported OS: $os"
-      warn "Install dependencies manually, then run: go install -tags \"$GO_TAGS\" $REPO_MODULE@latest"
+      warn "Install dependencies manually, then run: go install -tags \"$GO_TAGS\" $REPO_MODULE@$INSTALL_REF"
       exit 1
       ;;
   esac
