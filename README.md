@@ -10,6 +10,8 @@ Useful for people and for coding agents that need a small, durable memory layer 
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
+The installer downloads a **GitHub source archive** for the requested revision and runs `go install ./cmd/thr` from that tree, so you always get the same sources as the GitHub UI (no stale `GOPROXY` pseudo-versions for branch installs). Override the revision with `THR_INSTALL_REF` (branch name, full commit SHA, or tag like `v0.1.0`).
+
 ## Commands
 
 | Command | What it does |

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Install by compiling a fresh checkout from GitHub's source archive. This avoids
+# `go install module@branch` resolving to stale pseudo-versions via GOPROXY (a common
+# footgun for public CLIs). For versioned installs once you publish semver tags, set
+# THR_INSTALL_REF=v1.2.3 (see https://go.dev/doc/manage-install).
+REPO_SLUG="Chadi00/thr"
 REPO_MODULE="github.com/Chadi00/thr/cmd/thr"
+# Branch name, tag (v1.2.3), or full commit SHA. Default tracks the moving tip of master.
 INSTALL_REF="${THR_INSTALL_REF:-master}"
 GO_TAGS="sqlite_fts5"
 
@@ -110,9 +116,69 @@ ensure_onnx_linux() {
 # Spinner frames match briandowns/spinner CharSets[11] (braille).
 _spinner_frames=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
 
+_thr_validate_install_ref() {
+  local ref="$1"
+  case "$ref" in
+    *..*)
+      warn "Invalid THR_INSTALL_REF (contains '..'): $ref"
+      return 1
+      ;;
+  esac
+  if [[ "$ref" == *[![:print:]]* ]]; then
+    warn "Invalid THR_INSTALL_REF (non-printable characters): $ref"
+    return 1
+  fi
+  return 0
+}
+
+# GitHub serves tarballs for branches, tags, and commits; content matches the web UI.
+_thr_archive_url() {
+  local ref="$1"
+
+  if [[ "$ref" == v* ]] && [[ "$ref" =~ ^v[0-9] ]]; then
+    printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz' "$REPO_SLUG" "$ref"
+    return 0
+  fi
+
+  if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
+    printf 'https://github.com/%s/archive/%s.tar.gz' "$REPO_SLUG" "$ref"
+    return 0
+  fi
+
+  printf 'https://github.com/%s/archive/refs/heads/%s.tar.gz' "$REPO_SLUG" "$ref"
+}
+
 install_thr() {
-  log "Installing/updating thr via go install..."
-  log "Target module: $REPO_MODULE@$INSTALL_REF"
+  _thr_validate_install_ref "$INSTALL_REF" || return 1
+
+  local archive_url
+  archive_url="$(_thr_archive_url "$INSTALL_REF")"
+
+  log "Installing/updating thr from GitHub source (not the Go module proxy)..."
+  log "Archive: $archive_url"
+  log "Then: go install -tags $GO_TAGS ./cmd/thr"
+
+  local tmpdir
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmpdir'" RETURN
+
+  if ! curl -fsSL "$archive_url" | tar -xz -C "$tmpdir"; then
+    warn "Failed to download or extract: $archive_url"
+    return 1
+  fi
+
+  local top dirs
+  dirs=("$tmpdir"/*/)
+  if [[ ! -e "${dirs[0]:-}" ]]; then
+    warn "Archive layout unexpected after extract (no top-level directory)."
+    return 1
+  fi
+  top="${dirs[0]%/}"
+  if [[ ! -f "$top/go.mod" ]]; then
+    warn "Archive layout unexpected after extract (missing go.mod)."
+    return 1
+  fi
 
   local spin_pid
   (
@@ -137,7 +203,7 @@ install_thr() {
 
   local ec=0
   set +e
-  CGO_ENABLED=1 go install -tags "$GO_TAGS" "$REPO_MODULE@$INSTALL_REF"
+  (cd "$top" && CGO_ENABLED=1 go install -tags "$GO_TAGS" ./cmd/thr)
   ec=$?
   set -e
 
@@ -337,6 +403,8 @@ main() {
   local mac_system=0
   os="$(uname -s)"
 
+  _thr_validate_install_ref "$INSTALL_REF" || exit 1
+
   case "$os" in
     Darwin)
       ensure_go_macos
@@ -350,7 +418,8 @@ main() {
       ;;
     *)
       warn "Unsupported OS: $os"
-      warn "Install dependencies manually, then run: go install -tags \"$GO_TAGS\" $REPO_MODULE@$INSTALL_REF"
+      warn "Install dependencies manually, then fetch $(_thr_archive_url "$INSTALL_REF"), extract, and run:"
+      warn "  CGO_ENABLED=1 go install -tags \"$GO_TAGS\" ./cmd/thr"
       exit 1
       ;;
   esac
