@@ -34,15 +34,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # ONNX Runtime: onnxruntime_go vendors C headers and dlopen()s the shared library at
+      # runtime — no -dev package needed to compile. (Noble/24.04 also lacks libonnxruntime-dev
+      # in default apt.) SQLite CGO needs libsqlite3-dev.
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libonnxruntime-dev
-
-      - name: macOS build dependencies
-        if: runner.os == 'macOS'
-        run: brew install onnxruntime
+          sudo apt-get install -y build-essential pkg-config libsqlite3-dev
 
       - name: Build binary
         env:
