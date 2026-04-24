@@ -4,10 +4,10 @@
 
 ## Install or update in one command
 
-For a private repo, run this from anywhere (requires `gh auth login`):
+Run this from anywhere:
 
 ```bash
-gh api repos/Chadi00/thr/contents/install.sh?ref=master --jq '.content' | base64 --decode | bash
+curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
 This command:
@@ -16,10 +16,10 @@ This command:
 - installs `thr` globally via `go install`
 - updates to the latest `thr` version when re-run
 
-If the repo becomes public, you can also use:
+If you are using a private fork/repo, use an authenticated install command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
+gh api repos/Chadi00/thr/contents/install.sh?ref=master --jq '.content' | base64 --decode | bash
 ```
 
 ## Commands
