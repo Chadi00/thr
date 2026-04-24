@@ -108,6 +108,7 @@ ensure_onnx_linux() {
 
 install_thr() {
   log "Installing/updating thr via go install..."
+  log "Target module: $REPO_MODULE@latest"
   CGO_ENABLED=1 go install -tags "$GO_TAGS" "$REPO_MODULE@latest"
 }
 
