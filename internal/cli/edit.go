@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
@@ -16,8 +15,7 @@ func newEditCommand(dbPath *string) *cobra.Command {
 		Long:  "Replace a memory using text. Use '-' to read replacement text from stdin explicitly.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, true, false)
+			deps, cleanup, err := initWriteRuntimeWithEmbedder(*dbPath, false)
 			if err != nil {
 				return err
 			}
@@ -37,7 +35,7 @@ func newEditCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("embed memory text: %w", err)
 			}
 
-			memory, err := deps.repo.EditMemory(ctx, id, text, embedding)
+			memory, err := deps.repo.EditMemory(cmd.Context(), id, text, embedding)
 			if err != nil {
 				if err == store.ErrMemoryNotFound {
 					return fmt.Errorf("memory %d not found", id)

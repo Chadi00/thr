@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
@@ -16,8 +15,7 @@ func newForgetCommand(dbPath *string) *cobra.Command {
 		Short: "Delete a memory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, false, false)
+			deps, cleanup, err := initWriteRuntime(*dbPath)
 			if err != nil {
 				return err
 			}
@@ -28,7 +26,7 @@ func newForgetCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("invalid id %q: %w", args[0], err)
 			}
 
-			if err := deps.repo.ForgetMemory(ctx, id); err != nil {
+			if err := deps.repo.ForgetMemory(cmd.Context(), id); err != nil {
 				if err == store.ErrMemoryNotFound {
 					return fmt.Errorf("memory %d not found", id)
 				}

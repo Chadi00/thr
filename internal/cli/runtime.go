@@ -2,6 +2,7 @@ package cli
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/Chadi00/thr/internal/config"
@@ -11,48 +12,126 @@ import (
 
 type runtimeDeps struct {
 	config   config.Config
-	db       *sql.DB
 	repo     *store.Repository
 	embedder embed.Embedder
 }
 
-// showEmbedDownload controls fastembed download/progress output when the embedder
-// is initialized. It is ignored when withEmbedder is false.
-func initRuntime(dbFlag string, withEmbedder bool, showEmbedDownload bool) (*runtimeDeps, func(), error) {
+func initReadRuntime(dbFlag string) (*runtimeDeps, func(), error) {
 	cfg, err := config.Load(dbFlag)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.EnsureDirs(); err != nil {
+	db, err := store.OpenExisting(cfg.DBPath)
+	if err != nil {
 		return nil, nil, err
 	}
+	deps := &runtimeDeps{
+		config: cfg,
+		repo:   store.NewRepository(db),
+	}
+	return deps, cleanupRuntime(deps, db), nil
+}
 
+func initReadRuntimeWithEmbedder(dbFlag string, showEmbedDownload bool) (*runtimeDeps, func(), error) {
+	cfg, err := config.Load(dbFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := store.OpenExisting(cfg.DBPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.EnsureModelCacheDir(); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	bge, err := embed.NewBGEEmbedder(cfg.ModelCache, showEmbedDownload)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("initialize embedder: %w", err)
+	}
+	deps := &runtimeDeps{
+		config:   cfg,
+		repo:     store.NewRepository(db),
+		embedder: bge,
+	}
+	return deps, cleanupRuntime(deps, db), nil
+}
+
+func initWriteRuntime(dbFlag string) (*runtimeDeps, func(), error) {
+	cfg, err := config.Load(dbFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.EnsureDBDir(); err != nil {
+		return nil, nil, err
+	}
 	db, err := store.Open(cfg.DBPath)
 	if err != nil {
 		return nil, nil, err
 	}
-
 	deps := &runtimeDeps{
 		config: cfg,
-		db:     db,
 		repo:   store.NewRepository(db),
 	}
+	return deps, cleanupRuntime(deps, db), nil
+}
 
-	cleanup := func() {
+func initWriteRuntimeWithEmbedder(dbFlag string, showEmbedDownload bool) (*runtimeDeps, func(), error) {
+	cfg, err := config.Load(dbFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.EnsureDBDir(); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.EnsureModelCacheDir(); err != nil {
+		return nil, nil, err
+	}
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	bge, err := embed.NewBGEEmbedder(cfg.ModelCache, showEmbedDownload)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("initialize embedder: %w", err)
+	}
+	deps := &runtimeDeps{
+		config:   cfg,
+		repo:     store.NewRepository(db),
+		embedder: bge,
+	}
+	return deps, cleanupRuntime(deps, db), nil
+}
+
+func initPrefetchRuntime(dbFlag string, showEmbedDownload bool) (*runtimeDeps, func(), error) {
+	cfg, err := config.Load(dbFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.EnsureModelCacheDir(); err != nil {
+		return nil, nil, err
+	}
+	bge, err := embed.NewBGEEmbedder(cfg.ModelCache, showEmbedDownload)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize embedder: %w", err)
+	}
+	deps := &runtimeDeps{config: cfg, embedder: bge}
+	return deps, cleanupRuntime(deps, nil), nil
+}
+
+func cleanupRuntime(deps *runtimeDeps, db *sql.DB) func() {
+	return func() {
 		if deps.embedder != nil {
 			_ = deps.embedder.Close()
 		}
-		_ = db.Close()
-	}
-
-	if withEmbedder {
-		bge, err := embed.NewBGEEmbedder(cfg.ModelCache, showEmbedDownload)
-		if err != nil {
-			cleanup()
-			return nil, nil, fmt.Errorf("initialize embedder: %w", err)
+		if db != nil {
+			_ = db.Close()
 		}
-		deps.embedder = bge
 	}
+}
 
-	return deps, cleanup, nil
+func isMissingDatabase(err error) bool {
+	return errors.Is(err, store.ErrDatabaseNotFound)
 }

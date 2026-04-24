@@ -1,11 +1,7 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-
-	"github.com/Chadi00/thr/internal/search"
+	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -19,35 +15,32 @@ func newAskCommand(dbPath *string) *cobra.Command {
 		Long:  "ask performs vector retrieval over stored memories and returns the closest matches; it does not generate LLM answers.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, true, false)
+			deps, cleanup, err := initReadRuntimeWithEmbedder(*dbPath, false)
 			if err != nil {
+				if isMissingDatabase(err) {
+					if isJSONOutput(cmd) {
+						return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), nil)
+					}
+					output.PrintSemanticResults(cmd.OutOrStdout(), nil, withDistance)
+					return nil
+				}
 				return err
 			}
 			defer cleanup()
 
-			semantic := search.NewSemanticSearcher(deps.repo, deps.embedder)
-			results, err := semantic.Ask(ctx, args[0], limit)
+			vector, err := deps.embedder.QueryEmbed(args[0])
+			if err != nil {
+				return err
+			}
+			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit)
 			if err != nil {
 				return err
 			}
 
 			if isJSONOutput(cmd) {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(results)
+				return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), results)
 			}
-			if len(results) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no matching memories")
-				return nil
-			}
-			for _, result := range results {
-				if withDistance {
-					fmt.Fprintf(cmd.OutOrStdout(), "%d\t%.6f\t%s\n", result.Memory.ID, result.Distance, result.Memory.Text)
-					continue
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%d\t%s\n", result.Memory.ID, result.Memory.Text)
-			}
+			output.PrintSemanticResults(cmd.OutOrStdout(), results, withDistance)
 			return nil
 		},
 	}

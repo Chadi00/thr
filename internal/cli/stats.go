@@ -1,9 +1,8 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-
+	"github.com/Chadi00/thr/internal/config"
+	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -12,21 +11,30 @@ func newStatsCommand(dbPath *string) *cobra.Command {
 		Use:   "stats",
 		Short: "Show database and model cache stats",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, false, false)
-			if err != nil {
-				return err
-			}
-			defer cleanup()
-
-			count, err := deps.repo.CountMemories(ctx)
+			cfg, err := config.Load(*dbPath)
 			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "db_path\t%s\n", deps.config.DBPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "model_cache\t%s\n", deps.config.ModelCache)
-			fmt.Fprintf(cmd.OutOrStdout(), "memories\t%d\n", count)
+			stats := output.Stats{DBPath: cfg.DBPath, ModelCache: cfg.ModelCache}
+			deps, cleanup, err := initReadRuntime(*dbPath)
+			if err != nil {
+				if !isMissingDatabase(err) {
+					return err
+				}
+			} else {
+				defer cleanup()
+				count, err := deps.repo.CountMemories(cmd.Context())
+				if err != nil {
+					return err
+				}
+				stats.Memories = count
+			}
+
+			if isJSONOutput(cmd) {
+				return output.PrintStatsJSON(cmd.OutOrStdout(), stats)
+			}
+			output.PrintStats(cmd.OutOrStdout(), stats)
 			return nil
 		},
 	}

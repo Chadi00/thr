@@ -21,21 +21,24 @@ Retrieval runs **on your machine** — no cloud API for search.
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-The installer picks the right archive for your OS and CPU, checks SHA-256 checksums from the release, and places the binary where your PATH can find it (see [Releases](https://github.com/Chadi00/thr/releases) if you prefer a manual download).
+The installer picks the right archive for your OS and CPU, checks SHA-256 checksums from the release, installs `thr` into a standard bin directory, and attempts `thr prefetch` so the embedding model is usually ready right away (see [Releases](https://github.com/Chadi00/thr/releases) if you prefer a manual download).
 
-**macOS:** install [Homebrew](https://brew.sh) first. The default installer uses it to place `thr` on your PATH (e.g. `/opt/homebrew/bin`) and to install **ONNX Runtime** (`onnxruntime`), which embedding commands need. Without Homebrew, install dependencies yourself or use `THR_USE_SOURCE=1` after satisfying the [source-build requirements](#platform-support).
+**macOS:** install [Homebrew](https://brew.sh) first. The installer uses it to install **ONNX Runtime** (`onnxruntime`), which embedding commands need, and defaults to a standard bin dir such as `/opt/homebrew/bin` or `/usr/local/bin`.
+
+**Linux:** automatic dependency setup is officially **apt-first**. The installer checks for **ONNX Runtime** and, when needed, tries `apt-get install libonnxruntime-dev` / `libonnxruntime1` before continuing. If that runtime cannot be installed, the installer stops instead of leaving semantic commands broken.
 
 | Variable | Purpose |
 |----------|---------|
 | `THR_VERSION` | `latest` (default) or an exact tag, e.g. `v0.1.2` |
 | `GITHUB_TOKEN` | Optional; higher rate limits for GitHub API when resolving releases |
+| `THR_INSTALL_DIR` | Install `thr` into this directory on macOS or Linux |
 | `THR_USER_BIN` | Linux install dir override (default: `~/.local/bin`) |
 | `THR_USE_SOURCE=1` | Build from source with Go + CGO instead of a release binary |
 | `THR_INSTALL_REF` | With source install: git ref to build (default: `master`) |
 
 ### Uninstall
 
-Removes the `thr` binary from common install locations, deletes the default data directory `~/.thr` (database and embedding cache), and strips the `export PATH=…` block that the Linux/source installer may have appended to your shell config. It does **not** remove Homebrew’s `onnxruntime` by default (other software may depend on it).
+Removes the `thr` binary from common install locations, deletes the default data directory `~/.thr` (database and embedding cache), and strips the installer-managed `export PATH=…` block from your shell config when one was added. It does **not** remove Homebrew’s `onnxruntime` by default (other software may depend on it).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
@@ -46,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | b
 | `THR_KEEP_DATA=1` | Keep `~/.thr` (only remove the binary and PATH snippet) |
 | `THR_UNINSTALL_ONNX=1` | Also run `brew uninstall onnxruntime` (macOS + Homebrew only) |
 
-If you used a custom database path (`THR_DB` or `--db`) outside `~/.thr`, delete that file yourself.
+If you used a custom install dir (`THR_INSTALL_DIR=/some/bin`), pass the same variable to `uninstall.sh` so it removes that binary too. If you used a custom database path (`THR_DB` or `--db`) outside `~/.thr`, delete that file yourself.
 
 ---
 
@@ -63,7 +66,7 @@ thr search "cli docs"
 
 Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to download the embedding model before the first slow `add` or `ask`.
 
-**Scripts and agents:** add `--json` to `list`, `show`, `ask`, or `search` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
+**Scripts and agents:** add `--json` to `list`, `show`, `ask`, `search`, or `stats` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
 
 ---
 
@@ -103,7 +106,7 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 
 **First-class:** macOS **arm64** and **x86_64**, Linux **x86_64** and **arm64** (glibc-oriented distros; release builds are from Ubuntu runners). Prebuilt archives are attached to [Releases](https://github.com/Chadi00/thr/releases). The recommended macOS install path assumes **Homebrew** is available (see [Install](#install)).
 
-**Source builds** need Go **1.26+**, CGO, SQLite dev headers, and a loadable **ONNX Runtime** (e.g. Homebrew `onnxruntime` on macOS; Linux distro packages or a path where the embedding stack can load `libonnxruntime`).
+**Source builds** need Go **1.26.2+**, CGO, SQLite dev headers, and a loadable **ONNX Runtime** (e.g. Homebrew `onnxruntime` on macOS; on apt-based Linux the installer tries to install `libonnxruntime-dev` / `libonnxruntime1`).
 
 **Not supported:** Windows, 32-bit, musl-first distros like stock Alpine (untested), and non-macOS BSD — open an issue with OS, arch, and what you tried if you need something outside this list.
 

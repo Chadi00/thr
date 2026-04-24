@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Default: install a prebuilt binary from GitHub Releases (same pattern as widely used Go CLIs).
-# Fallback: build from source (needs Go + CGO toolchain). Force source with THR_USE_SOURCE=1.
 REPO_SLUG="Chadi00/thr"
-REPO_MODULE="github.com/Chadi00/thr/cmd/thr"
-# Release tag (v1.2.3) or "latest" for the newest GitHub release.
 THR_VERSION="${THR_VERSION:-latest}"
-# Source-build ref when falling back: branch, tag, or commit SHA (default: master).
 INSTALL_REF="${THR_INSTALL_REF:-master}"
+THR_INSTALL_DIR="${THR_INSTALL_DIR:-}"
 GO_TAGS="sqlite_fts5"
+GO_MIN_VERSION="1.26.2"
+THR_PATH_MARKER="# thr install: add thr bin dir to PATH (https://github.com/Chadi00/thr)"
+THR_OLD_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
 
-# Set after a successful install (absolute path to thr binary).
 THR_INSTALLED_BIN=""
-# Temp dir for release download (removed after copying thr to its final location).
+THR_INSTALLED_DIR=""
 THR_RELEASE_TMPDIR=""
+THR_BUILD_TMPDIR=""
+THR_SPINNER_PID=""
+THR_UPDATED_SHELL_RC=0
 
 log() {
   printf '[thr-install] %s\n' "$*"
@@ -28,17 +29,77 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
-_thr_rm_tmp_dir() {
-  [[ -n "${1:-}" ]] && rm -rf "$1"
+cleanup() {
+  stop_install_spinner
+  if [[ -n "$THR_RELEASE_TMPDIR" ]]; then
+    rm -rf "$THR_RELEASE_TMPDIR"
+  fi
+  if [[ -n "$THR_BUILD_TMPDIR" ]]; then
+    rm -rf "$THR_BUILD_TMPDIR"
+  fi
+  return 0
 }
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 ensure_homebrew() {
   if need_cmd brew; then
     return 0
   fi
 
-  warn "Homebrew is required to auto-install dependencies on macOS."
+  warn "Homebrew is required on macOS to install ONNX Runtime automatically."
   warn "Install Homebrew from https://brew.sh and re-run this command."
+  return 1
+}
+
+go_version() {
+  local version
+  version="$(go env GOVERSION 2>/dev/null || true)"
+  if [[ -z "$version" ]]; then
+    version="$(go version | awk '{print $3}')"
+  fi
+  printf '%s' "${version#go}"
+}
+
+version_ge() {
+  local have="$1"
+  local want="$2"
+  local IFS=.
+  local -a have_parts want_parts
+  local i have_num want_num
+
+  read -r -a have_parts <<<"$have"
+  read -r -a want_parts <<<"$want"
+
+  for i in 0 1 2; do
+    have_num="${have_parts[i]:-0}"
+    want_num="${want_parts[i]:-0}"
+    have_num="${have_num%%[^0-9]*}"
+    want_num="${want_num%%[^0-9]*}"
+    have_num="${have_num:-0}"
+    want_num="${want_num:-0}"
+    if (( have_num > want_num )); then
+      return 0
+    fi
+    if (( have_num < want_num )); then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+ensure_go_version() {
+  local current
+  current="$(go_version)"
+  if version_ge "$current" "$GO_MIN_VERSION"; then
+    return 0
+  fi
+
+  warn "Go $GO_MIN_VERSION+ is required for source installs, but found Go $current."
+  warn "Install a newer Go toolchain and re-run this command."
   return 1
 }
 
@@ -64,8 +125,8 @@ ensure_go_linux() {
     return 0
   fi
 
-  warn "Go is not installed and no supported package manager was detected."
-  warn "Install Go 1.22+ manually and re-run this command."
+  warn "Go $GO_MIN_VERSION+ is required for source installs."
+  warn "This installer officially supports apt-based Linux for automatic dependency setup."
   return 1
 }
 
@@ -80,18 +141,18 @@ ensure_build_tools_macos() {
 }
 
 ensure_build_tools_linux() {
-  if need_cmd gcc; then
+  if need_cmd gcc && need_cmd pkg-config && pkg-config --exists sqlite3; then
     return 0
   fi
 
   if need_cmd apt-get; then
-    log "Installing build-essential for CGO..."
+    log "Installing Linux build dependencies for source install..."
     sudo apt-get update
-    sudo apt-get install -y build-essential pkg-config
+    sudo apt-get install -y build-essential pkg-config libsqlite3-dev
     return 0
   fi
 
-  warn "gcc/build tools are required for CGO builds."
+  warn "CGO build tools and sqlite3 development headers are required for source installs."
   return 1
 }
 
@@ -105,25 +166,75 @@ ensure_onnx_macos() {
   brew install onnxruntime
 }
 
+has_onnx_linux() {
+  local pattern
+
+  if need_cmd ldconfig && ldconfig -p 2>/dev/null | grep -q 'libonnxruntime'; then
+    return 0
+  fi
+
+  for pattern in \
+    /usr/lib/libonnxruntime.so* \
+    /usr/local/lib/libonnxruntime.so* \
+    /usr/lib/x86_64-linux-gnu/libonnxruntime.so* \
+    /usr/lib/aarch64-linux-gnu/libonnxruntime.so*; do
+    if compgen -G "$pattern" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 ensure_onnx_linux() {
-  if ldconfig -p 2>/dev/null | grep -q "libonnxruntime"; then
+  if has_onnx_linux; then
     return 0
   fi
 
   if need_cmd apt-get; then
-    log "Attempting to install ONNX Runtime via apt..."
+    log "Installing ONNX Runtime via apt..."
     sudo apt-get update
-    if sudo apt-get install -y libonnxruntime-dev; then
-      return 0
+    if sudo apt-get install -y libonnxruntime-dev || sudo apt-get install -y libonnxruntime1; then
+      if has_onnx_linux; then
+        return 0
+      fi
     fi
   fi
 
-  warn "ONNX Runtime was not auto-installed."
-  warn "Install libonnxruntime manually and set ONNX_PATH if needed."
+  warn "ONNX Runtime is required for thr embedding commands on Linux."
+  warn "Install libonnxruntime with apt or manually place libonnxruntime on the system library path, then re-run this installer."
+  return 1
 }
 
 # Spinner frames match briandowns/spinner CharSets[11] (braille).
 _spinner_frames=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
+
+start_install_spinner() {
+  local message="$1"
+  local i n
+
+  stop_install_spinner
+  (
+    i=0
+    n=${#_spinner_frames[@]}
+    while true; do
+      printf '\r\033[K[thr-install] %s %s' "${_spinner_frames[i]}" "$message" >&2
+      i=$(( (i + 1) % n ))
+      sleep 0.1
+    done
+  ) &
+  THR_SPINNER_PID=$!
+}
+
+stop_install_spinner() {
+  if [[ -n "$THR_SPINNER_PID" ]]; then
+    kill "$THR_SPINNER_PID" 2>/dev/null || true
+    wait "$THR_SPINNER_PID" 2>/dev/null || true
+    THR_SPINNER_PID=""
+    printf '\r\033[K' >&2
+  fi
+  return 0
+}
 
 _thr_validate_install_ref() {
   local ref="$1"
@@ -143,9 +254,7 @@ _thr_validate_install_ref() {
 _thr_validate_release_version() {
   case "$1" in
     latest) return 0 ;;
-    v*)
-      return 0
-      ;;
+    v*) return 0 ;;
     *)
       warn "Invalid THR_VERSION (use latest or a tag like v0.1.2): $1"
       return 1
@@ -153,9 +262,13 @@ _thr_validate_release_version() {
   esac
 }
 
-# GitHub serves tarballs for branches, tags, and commits; content matches the web UI.
 _thr_archive_url() {
   local ref="$1"
+
+  if [[ -n "${THR_SOURCE_ARCHIVE_URL:-}" ]]; then
+    printf '%s' "$THR_SOURCE_ARCHIVE_URL"
+    return 0
+  fi
 
   if [[ "$ref" == v* ]] && [[ "$ref" =~ ^v[0-9] ]]; then
     printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz' "$REPO_SLUG" "$ref"
@@ -175,16 +288,16 @@ _thr_goos_goarch() {
   os_raw="$(uname -s)"
   arch_raw="$(uname -m)"
   case "$os_raw" in
-    Darwin) printf '%s %s' "darwin" "$(_thr_normalize_arch "$arch_raw")" ;;
-    Linux) printf '%s %s' "linux" "$(_thr_normalize_arch "$arch_raw")" ;;
+    Darwin) printf '%s %s' 'darwin' "$(_thr_normalize_arch "$arch_raw")" ;;
+    Linux) printf '%s %s' 'linux' "$(_thr_normalize_arch "$arch_raw")" ;;
     *) return 1 ;;
   esac
 }
 
 _thr_normalize_arch() {
   case "$1" in
-    x86_64 | amd64) printf '%s' "amd64" ;;
-    arm64 | aarch64) printf '%s' "arm64" ;;
+    x86_64 | amd64) printf '%s' 'amd64' ;;
+    arm64 | aarch64) printf '%s' 'arm64' ;;
     *) return 1 ;;
   esac
 }
@@ -199,7 +312,13 @@ _thr_sha256_file() {
 
 _thr_release_api_url() {
   local version="$1"
-  if [[ "$version" == "latest" ]]; then
+
+  if [[ -n "${THR_RELEASE_API_URL:-}" ]]; then
+    printf '%s' "$THR_RELEASE_API_URL"
+    return 0
+  fi
+
+  if [[ "$version" == 'latest' ]]; then
     printf 'https://api.github.com/repos/%s/releases/latest' "$REPO_SLUG"
   else
     printf 'https://api.github.com/repos/%s/releases/tags/%s' "$REPO_SLUG" "$version"
@@ -209,27 +328,27 @@ _thr_release_api_url() {
 _thr_curl_github_json() {
   local url="$1"
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "$url"
+    curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H 'Accept: application/vnd.github+json' "$url"
   else
-    curl -fsSL -H "Accept: application/vnd.github+json" "$url"
+    curl -fsSL -H 'Accept: application/vnd.github+json' "$url"
   fi
 }
 
 _thr_json_asset_url() {
-  local archive_name="$1"
-  python3 -c "
+  local asset_name="$1"
+  python3 -c '
 import json, sys
 name = sys.argv[1]
 data = json.load(sys.stdin)
-for a in data.get('assets', []):
-    if a.get('name') == name:
-        print(a.get('browser_download_url', ''))
+for asset in data.get("assets", []):
+    if asset.get("name") == name:
+        print(asset.get("browser_download_url", ""))
         break
-" "$archive_name"
+' "$asset_name"
 }
 
-install_thr_from_github_release() {
-  local goos goarch triple archive checksums_url asset_url tmpdir expected actual
+download_thr_from_github_release() {
+  local goos goarch triple archive asset_url checksums_url expected actual json
 
   _thr_validate_release_version "$THR_VERSION" || return 1
 
@@ -246,70 +365,88 @@ install_thr_from_github_release() {
   goarch="${triple##* }"
   archive="thr_${goos}_${goarch}.tar.gz"
 
-  local json
   if ! json="$(_thr_curl_github_json "$(_thr_release_api_url "$THR_VERSION")")"; then
-    warn "No GitHub release found for THR_VERSION=$THR_VERSION (publish a tag like v0.1.2 first)."
+    warn "No GitHub release found for THR_VERSION=$THR_VERSION."
     return 1
   fi
 
   asset_url="$(printf '%s' "$json" | _thr_json_asset_url "$archive")"
-  checksums_url="$(printf '%s' "$json" | _thr_json_asset_url "checksums.txt")"
+  checksums_url="$(printf '%s' "$json" | _thr_json_asset_url 'checksums.txt')"
   if [[ -z "$asset_url" ]] || [[ -z "$checksums_url" ]]; then
     warn "Release is missing $archive or checksums.txt."
     return 1
   fi
 
-  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
+  THR_RELEASE_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
 
   log "Downloading $archive from GitHub Releases (THR_VERSION=$THR_VERSION)..."
-  if ! curl -fsSL "$asset_url" -o "$tmpdir/$archive"; then
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
-  fi
-  if ! curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"; then
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
-  fi
+  curl -fsSL "$asset_url" -o "$THR_RELEASE_TMPDIR/$archive"
+  curl -fsSL "$checksums_url" -o "$THR_RELEASE_TMPDIR/checksums.txt"
 
-  expected="$(grep -F "$archive" "$tmpdir/checksums.txt" | head -n 1 | awk '{print $1}')"
+  expected="$(awk -v name="$archive" '$2 == name {print $1; exit}' "$THR_RELEASE_TMPDIR/checksums.txt")"
   if [[ -z "$expected" ]]; then
     warn "Could not find checksum line for $archive."
-    _thr_rm_tmp_dir "$tmpdir"
     return 1
   fi
 
-  actual="$(_thr_sha256_file "$tmpdir/$archive")"
+  actual="$(_thr_sha256_file "$THR_RELEASE_TMPDIR/$archive")"
   if [[ "$actual" != "$expected" ]]; then
     warn "Checksum mismatch for $archive (expected $expected, got $actual)."
-    _thr_rm_tmp_dir "$tmpdir"
     return 1
   fi
 
-  if ! tar -xzf "$tmpdir/$archive" -C "$tmpdir"; then
-    _thr_rm_tmp_dir "$tmpdir"
+  tar -xzf "$THR_RELEASE_TMPDIR/$archive" -C "$THR_RELEASE_TMPDIR"
+  if [[ ! -f "$THR_RELEASE_TMPDIR/thr" ]]; then
+    warn "Archive did not contain a thr binary."
     return 1
   fi
-  if [[ ! -f "$tmpdir/thr" ]]; then
-    warn "Archive did not contain thr binary."
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
-  fi
-  if [[ ! -x "$tmpdir/thr" ]]; then
-    chmod +x "$tmpdir/thr"
-  fi
-  THR_INSTALLED_BIN="$tmpdir/thr"
-  THR_RELEASE_TMPDIR="$tmpdir"
-  return 0
+  chmod +x "$THR_RELEASE_TMPDIR/thr"
+  THR_INSTALLED_BIN="$THR_RELEASE_TMPDIR/thr"
 }
 
-_go_bin_dir() {
-  local gobin
-  gobin="$(go env GOBIN)"
-  if [ -z "$gobin" ]; then
-    gobin="$(go env GOPATH)/bin"
+build_thr_from_source() {
+  local archive_url top dirs ec
+
+  _thr_validate_install_ref "$INSTALL_REF" || return 1
+  if ! need_cmd curl || ! need_cmd tar || ! need_cmd go; then
+    warn "Source install needs curl, tar, and Go."
+    return 1
   fi
-  gobin="${gobin/#\~/$HOME}"
-  printf '%s' "$gobin"
+
+  archive_url="$(_thr_archive_url "$INSTALL_REF")"
+  THR_BUILD_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
+
+  log "Building thr from source..."
+  log "Archive: $archive_url"
+  curl -fsSL "$archive_url" | tar -xz -C "$THR_BUILD_TMPDIR"
+
+  dirs=("$THR_BUILD_TMPDIR"/*/)
+  if [[ ! -e "${dirs[0]:-}" ]]; then
+    warn "Archive layout unexpected after extract (no top-level directory)."
+    return 1
+  fi
+  top="${dirs[0]%/}"
+  if [[ ! -f "$top/go.mod" ]]; then
+    warn "Archive layout unexpected after extract (missing go.mod)."
+    return 1
+  fi
+
+  start_install_spinner 'still working (go build)...'
+  set +e
+  (cd "$top" && CGO_ENABLED=1 go build -trimpath -tags "$GO_TAGS" -o "$THR_BUILD_TMPDIR/thr" ./cmd/thr)
+  ec=$?
+  set -e
+  stop_install_spinner
+
+  if [[ "$ec" -ne 0 ]]; then
+    return "$ec"
+  fi
+  if [[ ! -f "$THR_BUILD_TMPDIR/thr" ]]; then
+    warn "Source build completed without producing a thr binary."
+    return 1
+  fi
+  chmod +x "$THR_BUILD_TMPDIR/thr"
+  THR_INSTALLED_BIN="$THR_BUILD_TMPDIR/thr"
 }
 
 _shell_rc_file() {
@@ -328,360 +465,144 @@ _shell_rc_file() {
   esac
 }
 
-_THR_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
+strip_thr_path_blocks() {
+  local file="$1"
+  local tmp
+
+  [[ -f "$file" ]] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
+  awk -v m1="$THR_PATH_MARKER" -v m2="$THR_OLD_PATH_MARKER" '
+    $0 == m1 || $0 == m2 { skip = 1; next }
+    skip && /^export PATH=/ { skip = 0; next }
+    skip { next }
+    { print }
+  ' "$file" >"$tmp"
+  mv "$tmp" "$file"
+}
 
 ensure_dir_on_path() {
   local dir="$1"
-  local marker="$2"
+  local rc
 
   if [[ ":$PATH:" == *":$dir:"* ]]; then
-    log "Directory already on PATH ($dir)."
     return 0
   fi
 
-  local rc
   rc="$(_shell_rc_file)"
-
-  if [[ -f "$rc" ]] && grep -qF "$marker" "$rc" 2>/dev/null; then
-    log "A thr PATH entry exists in $rc; open a new terminal or: source $rc"
-    return 0
-  fi
+  mkdir -p "$(dirname "$rc")"
+  strip_thr_path_blocks "$rc"
 
   {
-    printf '\n%s\n' "$marker"
+    printf '\n%s\n' "$THR_PATH_MARKER"
     printf 'export PATH="%s:$PATH"\n' "$dir"
   } >>"$rc"
 
+  THR_UPDATED_SHELL_RC=1
   log "Added $dir to PATH in $rc"
-  log "If thr is not found in this window: source $rc   (or open a new terminal)"
 }
 
-_install_thr_to_one_dir() {
-  local src=$1
-  local dir=$2
-  local dst="${dir}/thr"
+ensure_install_dir_exists() {
+  local dir="$1"
 
-  [[ -d "$dir" ]] || return 1
-  if [[ -w "$dir" ]]; then
-    if install -m 0755 "$src" "$dst"; then
-      log "Installed thr to $dst"
-      THR_INSTALLED_BIN="$dst"
-      return 0
-    fi
-    return 1
-  fi
-  log "Installing thr to $dst (enter your macOS password if prompted)..."
-  if sudo install -m 0755 "$src" "$dst"; then
-    log "Installed thr to $dst"
-    THR_INSTALLED_BIN="$dst"
+  if [[ -d "$dir" ]]; then
     return 0
   fi
-  return 1
+
+  if mkdir -p "$dir" 2>/dev/null; then
+    return 0
+  fi
+
+  log "Creating $dir (you may be prompted for sudo)..."
+  sudo mkdir -p "$dir"
 }
 
-install_thr_to_system_path_macos() {
-  local src="${1:-$(_go_bin_dir)/thr}"
+install_thr_to_dir() {
+  local src="$1"
+  local dir="$2"
+  local dst
+
+  ensure_install_dir_exists "$dir"
+  dst="$dir/thr"
+
+  if [[ -w "$dir" ]]; then
+    install -m 0755 "$src" "$dst"
+  else
+    log "Installing thr to $dst (you may be prompted for sudo)..."
+    sudo install -m 0755 "$src" "$dst"
+  fi
+
+  THR_INSTALLED_BIN="$dst"
+  THR_INSTALLED_DIR="$dir"
+  log "Installed thr to $dst"
+}
+
+resolve_install_dir() {
+  local os="$1"
+
+  if [[ -n "$THR_INSTALL_DIR" ]]; then
+    printf '%s' "$THR_INSTALL_DIR"
+    return 0
+  fi
+
+  case "$os" in
+    Darwin)
+      if need_cmd brew; then
+        printf '%s' "$(brew --prefix)/bin"
+        return 0
+      fi
+      if [[ -d /opt/homebrew/bin ]]; then
+        printf '%s' '/opt/homebrew/bin'
+      else
+        printf '%s' '/usr/local/bin'
+      fi
+      ;;
+    Linux)
+      printf '%s' "${THR_USER_BIN:-$HOME/.local/bin}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+apply_install_dir_to_path_in_this_process() {
+  local dir="$1"
+  if [[ ":$PATH:" != *":$dir:"* ]]; then
+    export PATH="$dir:$PATH"
+  fi
+}
+
+install_prepared_binary() {
+  local os="$1"
   local dir
 
-  if [[ ! -f "$src" ]]; then
-    warn "thr binary not found: $src"
+  if [[ ! -f "$THR_INSTALLED_BIN" ]]; then
+    warn "Internal error: no prepared thr binary to install."
     return 1
   fi
 
-  if need_cmd brew; then
-    if _install_thr_to_one_dir "$src" "$(brew --prefix)/bin"; then
-      return 0
-    fi
-  fi
-
-  for dir in /opt/homebrew/bin /usr/local/bin; do
-    if _install_thr_to_one_dir "$src" "$dir"; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-install_thr_user_local_linux() {
-  local src="$1"
-  local destdir="${THR_USER_BIN:-$HOME/.local/bin}"
-  mkdir -p "$destdir"
-  if install -m 0755 "$src" "$destdir/thr"; then
-    log "Installed thr to $destdir/thr"
-    THR_INSTALLED_BIN="$destdir/thr"
-    ensure_dir_on_path "$destdir" "$_THR_PATH_MARKER"
-    return 0
-  fi
-  return 1
-}
-
-_prepend_default_macos_path() {
-  local d
-  for d in /opt/homebrew/bin /usr/local/bin; do
-    if [[ -d "$d" ]]; then
-      export PATH="$d:$PATH"
-    fi
-  done
-  if need_cmd brew; then
-    d="$(brew --prefix)/bin"
-    if [[ -d "$d" ]]; then
-      export PATH="$d:$PATH"
-    fi
-  fi
-}
-
-ensure_gobin_in_path() {
-  ensure_dir_on_path "$(_go_bin_dir)" "$_THR_PATH_MARKER"
-}
-
-apply_gobin_to_path_in_this_process() {
-  export PATH="$(_go_bin_dir):$PATH"
-}
-
-apply_local_bin_to_path_in_this_process() {
-  export PATH="${THR_USER_BIN:-$HOME/.local/bin}:$PATH"
+  dir="$(resolve_install_dir "$os")" || return 1
+  install_thr_to_dir "$THR_INSTALLED_BIN" "$dir"
+  ensure_dir_on_path "$dir"
+  apply_install_dir_to_path_in_this_process "$dir"
 }
 
 prefetch_embedding_model() {
-  local gothr
-  gothr="${THR_INSTALLED_BIN:-}"
-
-  if [[ -z "$gothr" ]] && command -v thr >/dev/null 2>&1; then
-    gothr="$(command -v thr)"
-  fi
-  if [[ -z "$gothr" ]]; then
-    gothr="$(_go_bin_dir)/thr"
+  if [[ -n "$THR_INSTALLED_BIN" ]] && [[ -x "$THR_INSTALLED_BIN" ]]; then
+    "$THR_INSTALLED_BIN" prefetch
+    return $?
   fi
 
   if command -v thr >/dev/null 2>&1; then
     thr prefetch
-  elif [[ -x "$gothr" ]]; then
-    log "Using $gothr for prefetch (add that directory to PATH to run thr from anywhere)..."
-    "$gothr" prefetch
-  else
-    return 1
-  fi
-}
-
-source_shell_rc_in_subshell() {
-  local rc qrc
-  local ok=0
-
-  rc="$(_shell_rc_file)"
-  if [[ ! -f "$rc" ]]; then
-    return 0
-  fi
-  qrc=$(printf '%q' "$rc")
-
-  case "$(basename "${SHELL:-/bin/sh}")" in
-    zsh)
-      if command -v zsh >/dev/null 2>&1 && zsh -c "set -e; source $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
-        ok=1
-      fi
-      ;;
-    bash)
-      if command -v bash >/dev/null 2>&1 && bash -c "set -e; source $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
-        ok=1
-      fi
-      ;;
-    *)
-      if sh -c "set -e; . $qrc >/dev/null 2>&1; command -v thr" 2>/dev/null; then
-        ok=1
-      fi
-      ;;
-  esac
-
-  if [[ "$ok" -eq 1 ]]; then
-    log "Sourced $rc in a child shell; in *this* terminal you still need: source $rc  (or a new tab) before thr is found"
-  else
-    warn "Could not confirm \`source $rc\` + thr; check $rc and PATH"
-  fi
-}
-
-install_thr_from_source() {
-  _thr_validate_install_ref "$INSTALL_REF" || return 1
-
-  local archive_url
-  archive_url="$(_thr_archive_url "$INSTALL_REF")"
-
-  log "Building thr from GitHub source..."
-  log "Archive: $archive_url"
-
-  local tmpdir
-  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
-
-  if ! curl -fsSL "$archive_url" | tar -xz -C "$tmpdir"; then
-    warn "Failed to download or extract: $archive_url"
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
+    return $?
   fi
 
-  local top dirs
-  dirs=("$tmpdir"/*/)
-  if [[ ! -e "${dirs[0]:-}" ]]; then
-    warn "Archive layout unexpected after extract (no top-level directory)."
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
-  fi
-  top="${dirs[0]%/}"
-  if [[ ! -f "$top/go.mod" ]]; then
-    warn "Archive layout unexpected after extract (missing go.mod)."
-    _thr_rm_tmp_dir "$tmpdir"
-    return 1
-  fi
-
-  local spin_pid
-  (
-    i=0
-    n=${#_spinner_frames[@]}
-    while true; do
-      printf '\r\033[K[thr-install] %s still working (go install)...' "${_spinner_frames[i]}" >&2
-      i=$(( (i + 1) % n ))
-      sleep 0.1
-    done
-  ) &
-  spin_pid=$!
-
-  _stop_install_spinner() {
-    kill "$spin_pid" 2>/dev/null || true
-    wait "$spin_pid" 2>/dev/null || true
-    printf '\r\033[K' >&2
-  }
-
-  trap '_stop_install_spinner; trap - INT; kill -INT $$' INT
-
-  local ec=0
-  set +e
-  (cd "$top" && CGO_ENABLED=1 go install -tags "$GO_TAGS" ./cmd/thr)
-  ec=$?
-  set -e
-
-  trap - INT
-  _stop_install_spinner
-  if [[ "$ec" -ne 0 ]]; then
-    _thr_rm_tmp_dir "$tmpdir"
-    return "$ec"
-  fi
-  _thr_rm_tmp_dir "$tmpdir"
-  THR_INSTALLED_BIN="$(_go_bin_dir)/thr"
-  return 0
-}
-
-run_source_install_flow() {
-  local os="$1"
-  local mac_system=0
-
-  case "$os" in
-    Darwin)
-      ensure_go_macos
-      ensure_build_tools_macos
-      ensure_onnx_macos
-      ;;
-    Linux)
-      ensure_go_linux
-      ensure_build_tools_linux
-      ensure_onnx_linux
-      ;;
-    *)
-      warn "Unsupported OS: $os"
-      warn "Install dependencies manually, then fetch $(_thr_archive_url "$INSTALL_REF"), extract, and run:"
-      warn "  CGO_ENABLED=1 go install -tags \"$GO_TAGS\" ./cmd/thr"
-      exit 1
-      ;;
-  esac
-
-  install_thr_from_source || exit 1
-
-  if [[ "$os" == "Darwin" ]]; then
-    if install_thr_to_system_path_macos "$THR_INSTALLED_BIN"; then
-      mac_system=1
-    else
-      log "Falling back: adding Go bin to your shell config (or use: export PATH=\"$(_go_bin_dir):\$PATH\")."
-      ensure_gobin_in_path
-    fi
-  else
-    ensure_gobin_in_path
-  fi
-
-  if [[ "$os" == "Darwin" ]]; then
-    _prepend_default_macos_path
-  fi
-  if [[ "$mac_system" -eq 0 ]]; then
-    apply_gobin_to_path_in_this_process
-  fi
-  if [[ "$mac_system" -eq 0 ]]; then
-    source_shell_rc_in_subshell
-  fi
-
-  finalize_messages "$os" "$mac_system"
-}
-
-run_binary_install_flow() {
-  local os="$1"
-  local mac_system=0
-
-  # Prebuilt thr still dlopen()s the system ONNX Runtime on macOS (same as source builds).
-  # Without Homebrew onnxruntime, prefetch/embed steps fail with "onnxruntime.so" not found.
-  if [[ "$os" == "Darwin" ]]; then
-    ensure_onnx_macos || warn "Embedding features need ONNX Runtime. Install with: brew install onnxruntime"
-  fi
-
-  install_thr_from_github_release || return 1
-
-  if [[ "$os" == "Darwin" ]]; then
-    if install_thr_to_system_path_macos "$THR_INSTALLED_BIN"; then
-      mac_system=1
-    else
-      warn "Could not install to system PATH locations; copying to Go bin if available."
-      if need_cmd go; then
-        mkdir -p "$(_go_bin_dir)"
-        install -m 0755 "$THR_INSTALLED_BIN" "$(_go_bin_dir)/thr"
-        THR_INSTALLED_BIN="$(_go_bin_dir)/thr"
-        ensure_gobin_in_path
-      else
-        warn "Install failed: could not write to /opt/homebrew/bin and Go is not installed."
-        [[ -n "${THR_RELEASE_TMPDIR:-}" ]] && rm -rf "$THR_RELEASE_TMPDIR"
-        THR_RELEASE_TMPDIR=""
-        return 1
-      fi
-    fi
-  else
-    if ! install_thr_user_local_linux "$THR_INSTALLED_BIN"; then
-      [[ -n "${THR_RELEASE_TMPDIR:-}" ]] && rm -rf "$THR_RELEASE_TMPDIR"
-      THR_RELEASE_TMPDIR=""
-      return 1
-    fi
-  fi
-
-  if [[ -n "${THR_RELEASE_TMPDIR:-}" ]]; then
-    rm -rf "$THR_RELEASE_TMPDIR"
-    THR_RELEASE_TMPDIR=""
-  fi
-
-  if [[ "$os" == "Darwin" ]]; then
-    _prepend_default_macos_path
-  fi
-  if [[ "$mac_system" -eq 0 ]]; then
-    apply_local_bin_to_path_in_this_process
-    source_shell_rc_in_subshell
-  fi
-
-  finalize_messages "$os" "$mac_system"
+  return 1
 }
 
 finalize_messages() {
-  local os="$1"
-  local mac_system="$2"
-
-  if command -v thr >/dev/null 2>&1; then
-    log "Ready: $(command -v thr)"
-  elif [[ -n "$THR_INSTALLED_BIN" ]] && [[ -x "$THR_INSTALLED_BIN" ]]; then
-    log "Installed binary: $THR_INSTALLED_BIN"
-  else
-    warn "thr is not on PATH in this install session."
-  fi
-
+  log "Ready: $(command -v thr 2>/dev/null || printf '%s' "$THR_INSTALLED_BIN")"
   log "Ensuring the embedding model is in cache (first install may take a minute)..."
   if prefetch_embedding_model; then
     log "Embedding model is available."
@@ -689,31 +610,70 @@ finalize_messages() {
     warn "Could not run thr prefetch. The model will download on the first add, ask, or edit."
   fi
 
-  if [[ "$os" == "Darwin" ]] && [[ "$mac_system" -eq 1 ]]; then
-    log "On macOS, thr is on your default PATH. Run: thr --help   (re-run this installer anytime to update)"
-  else
-    log "If thr is not found in this window: source $(_shell_rc_file)  (or open a new tab)"
-    log "Re-run this installer to update. Verify: thr --help"
+  if [[ "$THR_UPDATED_SHELL_RC" -eq 1 ]]; then
+    log "If thr is not found in new shells yet: source $(_shell_rc_file)  (or open a new terminal)"
   fi
+  log "Verify: thr --help"
+}
+
+run_source_install_flow() {
+  local os="$1"
+
+  case "$os" in
+    Darwin)
+      ensure_go_macos
+      ensure_go_version
+      ensure_build_tools_macos
+      ensure_onnx_macos
+      ;;
+    Linux)
+      ensure_go_linux
+      ensure_go_version
+      ensure_build_tools_linux
+      ensure_onnx_linux
+      ;;
+    *)
+      warn "Unsupported OS: $os"
+      return 1
+      ;;
+  esac
+
+  build_thr_from_source
+  install_prepared_binary "$os"
+  finalize_messages
+}
+
+run_binary_install_flow() {
+  local os="$1"
+
+  case "$os" in
+    Darwin) ensure_onnx_macos ;;
+    Linux) ensure_onnx_linux ;;
+    *)
+      warn "Unsupported OS: $os"
+      return 1
+      ;;
+  esac
+
+  download_thr_from_github_release
+  install_prepared_binary "$os"
+  finalize_messages
 }
 
 main() {
   local os
   os="$(uname -s)"
 
-  if [[ "${THR_USE_SOURCE:-}" == "1" ]]; then
-    _thr_validate_install_ref "$INSTALL_REF" || exit 1
+  if [[ "${THR_USE_SOURCE:-}" == '1' ]]; then
     run_source_install_flow "$os"
-    exit 0
+    return 0
   fi
 
   if run_binary_install_flow "$os"; then
-    exit 0
+    return 0
   fi
 
-  warn "Prebuilt install unavailable; falling back to building from source (requires Go)."
-  warn "Tip: publish a release (git tag v0.x.x) so binary installs work without a toolchain."
-  _thr_validate_install_ref "$INSTALL_REF" || exit 1
+  warn "Prebuilt install unavailable; falling back to building from source."
   run_source_install_flow "$os"
 }
 

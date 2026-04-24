@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Chadi00/thr/internal/domain"
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
@@ -161,43 +162,6 @@ func (r *Repository) EditMemory(ctx context.Context, id int64, text string, embe
 
 	return memory, nil
 }
-
-func (r *Repository) ImportMemory(ctx context.Context, text string, createdAt time.Time, updatedAt time.Time, embedding []float32) (domain.Memory, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Memory{}, fmt.Errorf("begin import memory transaction: %w", err)
-	}
-	defer rollback(tx)
-
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO memories (text, created_at, updated_at)
-		VALUES (?, ?, ?)
-	`, text, createdAt.UnixMilli(), updatedAt.UnixMilli())
-	if err != nil {
-		return domain.Memory{}, fmt.Errorf("import memory row: %w", err)
-	}
-
-	memoryID, err := res.LastInsertId()
-	if err != nil {
-		return domain.Memory{}, fmt.Errorf("get imported memory id: %w", err)
-	}
-
-	if err := upsertEmbedding(ctx, tx, memoryID, embedding); err != nil {
-		return domain.Memory{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Memory{}, fmt.Errorf("commit import memory transaction: %w", err)
-	}
-
-	return domain.Memory{
-		ID:        memoryID,
-		Text:      text,
-		CreatedAt: createdAt.UTC(),
-		UpdatedAt: updatedAt.UTC(),
-	}, nil
-}
-
 func (r *Repository) ForgetMemory(ctx context.Context, id int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -270,6 +234,10 @@ func (r *Repository) KeywordSearch(ctx context.Context, query string, limit int)
 	if limit <= 0 {
 		limit = 10
 	}
+	ftsQuery := buildFTSQuery(query)
+	if ftsQuery == "" {
+		return []domain.Memory{}, nil
+	}
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT m.id, m.text, m.created_at, m.updated_at
@@ -278,7 +246,7 @@ func (r *Repository) KeywordSearch(ctx context.Context, query string, limit int)
 		WHERE memory_fts MATCH ?
 		ORDER BY bm25(memory_fts)
 		LIMIT ?
-	`, query, limit)
+	`, ftsQuery, limit)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search query: %w", err)
 	}
@@ -343,21 +311,19 @@ func (r *Repository) RecallSearch(ctx context.Context, query string, limit int, 
 	candidates := make([]domain.Memory, 0, candidateLimit)
 	seen := make(map[int64]struct{}, candidateLimit)
 
-	ftsQuery := buildFTSQuery(query)
-	if ftsQuery != "" {
-		ftsHits, err := r.KeywordSearch(ctx, ftsQuery, candidateLimit)
-		if err == nil {
-			for _, memory := range ftsHits {
-				if len(candidates) >= candidateLimit {
-					break
-				}
-				if _, exists := seen[memory.ID]; exists {
-					continue
-				}
-				seen[memory.ID] = struct{}{}
-				candidates = append(candidates, memory)
-			}
+	ftsHits, err := r.KeywordSearch(ctx, query, candidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	for _, memory := range ftsHits {
+		if len(candidates) >= candidateLimit {
+			break
 		}
+		if _, exists := seen[memory.ID]; exists {
+			continue
+		}
+		seen[memory.ID] = struct{}{}
+		candidates = append(candidates, memory)
 	}
 
 	if len(candidates) < candidateLimit {
@@ -509,19 +475,46 @@ func rollback(tx *sql.Tx) {
 }
 
 func buildFTSQuery(query string) string {
-	tokens := strings.Fields(strings.ToLower(query))
+	tokens := tokenizeFTSQuery(query)
 	if len(tokens) == 0 {
 		return ""
 	}
 	clauses := make([]string, 0, len(tokens))
 	for _, token := range tokens {
-		token = strings.Trim(token, "\"'`.,!?;:()[]{}")
-		if token == "" {
-			continue
-		}
-		clauses = append(clauses, fmt.Sprintf("(%s OR %s*)", token, token))
+		clauses = append(clauses, buildFTSTokenClause(token))
 	}
 	return strings.Join(clauses, " OR ")
+}
+
+func tokenizeFTSQuery(query string) []string {
+	return strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
+	})
+}
+
+func buildFTSTokenClause(token string) string {
+	quoted := quoteFTSTerm(token)
+	if isSafeFTSPrefixToken(token) {
+		return fmt.Sprintf("(%s OR %s*)", quoted, token)
+	}
+	return quoted
+}
+
+func quoteFTSTerm(token string) string {
+	return fmt.Sprintf("\"%s\"", strings.ReplaceAll(token, "\"", "\"\""))
+}
+
+func isSafeFTSPrefixToken(token string) bool {
+	switch token {
+	case "and", "or", "not", "near":
+		return false
+	}
+	for _, r := range token {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func fuzzyScore(query string, text string) int {

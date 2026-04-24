@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -32,6 +33,9 @@ func NewBGEEmbedder(cacheDir string, showDownloadProgress bool) (*BGEEmbedder, e
 func (e *BGEEmbedder) PassageEmbed(text string) ([]float32, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.model == nil {
+		return nil, errors.New("embedder is closed")
+	}
 
 	vectors, err := e.model.PassageEmbed([]string{text}, 1)
 	if err != nil {
@@ -46,6 +50,9 @@ func (e *BGEEmbedder) PassageEmbed(text string) ([]float32, error) {
 func (e *BGEEmbedder) QueryEmbed(text string) ([]float32, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.model == nil {
+		return nil, errors.New("embedder is closed")
+	}
 
 	vector, err := e.model.QueryEmbed(text)
 	if err != nil {

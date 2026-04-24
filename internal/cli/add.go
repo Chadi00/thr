@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/Chadi00/thr/internal/output"
@@ -15,8 +14,7 @@ func newAddCommand(dbPath *string) *cobra.Command {
 		Long:  "Add a memory from text. Use '-' to read from stdin explicitly.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, true, false)
+			deps, cleanup, err := initWriteRuntimeWithEmbedder(*dbPath, false)
 			if err != nil {
 				return err
 			}
@@ -31,7 +29,7 @@ func newAddCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("embed memory text: %w", err)
 			}
 
-			memory, err := deps.repo.AddMemory(ctx, text, embedding)
+			memory, err := deps.repo.AddMemory(cmd.Context(), text, embedding)
 			if err != nil {
 				return err
 			}

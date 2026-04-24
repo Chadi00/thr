@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sort"
 	"time"
 )
@@ -13,6 +14,15 @@ import (
 var migrationFiles embed.FS
 
 func Migrate(db *sql.DB) error {
+	return migrate(db, migrationFiles)
+}
+
+type migrationReader interface {
+	fs.ReadDirFS
+	fs.ReadFileFS
+}
+
+func migrate(db *sql.DB, files migrationReader) error {
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			name TEXT PRIMARY KEY NOT NULL,
@@ -22,7 +32,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensure schema_migrations table: %w", err)
 	}
 
-	entries, err := migrationFiles.ReadDir("migrations")
+	entries, err := files.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)
 	}
@@ -46,7 +56,7 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("check migration %s status: %w", name, err)
 		}
 
-		contents, err := migrationFiles.ReadFile("migrations/" + name)
+		contents, err := files.ReadFile("migrations/" + name)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}

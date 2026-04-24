@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"context"
-
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -14,14 +12,20 @@ func newListCommand(dbPath *string) *cobra.Command {
 		Use:   "list",
 		Short: "List stored memories",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, false, false)
+			deps, cleanup, err := initReadRuntime(*dbPath)
 			if err != nil {
+				if isMissingDatabase(err) {
+					if isJSONOutput(cmd) {
+						return output.PrintMemoryListJSON(cmd.OutOrStdout(), nil)
+					}
+					output.PrintMemoryList(cmd.OutOrStdout(), nil)
+					return nil
+				}
 				return err
 			}
 			defer cleanup()
 
-			memories, err := deps.repo.ListMemories(ctx, limit)
+			memories, err := deps.repo.ListMemories(cmd.Context(), limit)
 			if err != nil {
 				return err
 			}

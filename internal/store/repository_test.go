@@ -102,14 +102,6 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected 1 memory after forget, got %d", count)
 	}
 
-	imported, err := repo.ImportMemory(ctx, "imported memory", m1.CreatedAt, m1.UpdatedAt, vectorA)
-	if err != nil {
-		t.Fatalf("import memory: %v", err)
-	}
-	if imported.ID == 0 {
-		t.Fatal("expected imported memory id to be set")
-	}
-
 	recallHits, err := repo.RecallSearch(ctx, "clasik sport", 5, 100, 100)
 	if err != nil {
 		t.Fatalf("recall search: %v", err)
@@ -176,6 +168,61 @@ func TestRecallSearchEscapesLikePattern(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].ID != memory.ID {
 		t.Fatalf("expected escaped LIKE hit for memory %d, got %+v", memory.ID, hits)
+	}
+}
+
+func TestKeywordSearchTreatsInputAsPlainText(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-fts-plain-text.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+	if _, err := repo.AddMemory(ctx, `she said "quoted" syntax literally`, vectorOf(0.4)); err != nil {
+		t.Fatalf("add memory: %v", err)
+	}
+
+	hits, err := repo.KeywordSearch(ctx, `"quoted" OR NEAR(*)`, 5)
+	if err != nil {
+		t.Fatalf("keyword search with literal-looking FTS syntax: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected one hit, got %+v", hits)
+	}
+}
+
+func TestRecallSearchDoesNotHideFTSFailures(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-fts-failure.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+	if _, err := repo.AddMemory(ctx, "semantic recall needs a working fts index", vectorOf(0.5)); err != nil {
+		t.Fatalf("add memory: %v", err)
+	}
+	if _, err := db.Exec(`DROP TABLE memory_fts`); err != nil {
+		t.Fatalf("drop memory_fts: %v", err)
+	}
+
+	if _, err := repo.RecallSearch(ctx, "semantic", 5, 50, 25); err == nil {
+		t.Fatal("expected recall search to surface the FTS failure")
 	}
 }
 

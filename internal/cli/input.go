@@ -36,11 +36,3 @@ func readFromStdin() (string, error) {
 	}
 	return value, nil
 }
-
-func hasStdinInput() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice == 0
-}

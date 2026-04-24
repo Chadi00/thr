@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"context"
-
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -16,14 +14,20 @@ func newSearchCommand(dbPath *string) *cobra.Command {
 		Long:  "search combines indexed FTS lookup with bounded recent substring matching and fuzzy ranking for typo-tolerant recall.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			deps, cleanup, err := initRuntime(*dbPath, false, false)
+			deps, cleanup, err := initReadRuntime(*dbPath)
 			if err != nil {
+				if isMissingDatabase(err) {
+					if isJSONOutput(cmd) {
+						return output.PrintSearchResultsJSON(cmd.OutOrStdout(), nil)
+					}
+					output.PrintSearchResults(cmd.OutOrStdout(), nil)
+					return nil
+				}
 				return err
 			}
 			defer cleanup()
 
-			results, err := deps.repo.RecallSearch(ctx, args[0], limit, 2000, max(limit*8, 64))
+			results, err := deps.repo.RecallSearch(cmd.Context(), args[0], limit, 2000, max(limit*8, 64))
 			if err != nil {
 				return err
 			}
