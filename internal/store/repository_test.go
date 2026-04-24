@@ -117,6 +117,45 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	if imported.ID == 0 {
 		t.Fatal("expected imported memory id to be set")
 	}
+
+	recallHits, err := repo.RecallSearch(ctx, "clasik sport", 5, 100, 100)
+	if err != nil {
+		t.Fatalf("recall search: %v", err)
+	}
+	if len(recallHits) == 0 || recallHits[0].ID != m2.ID {
+		t.Fatalf("expected fuzzy recall hit for memory %d, got %+v", m2.ID, recallHits)
+	}
+}
+
+func TestRecallSearchEscapesLikePattern(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-like-test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+
+	vector := vectorOf(0.2)
+	memory, err := repo.AddMemory(ctx, "literal 100%_match and more", vector)
+	if err != nil {
+		t.Fatalf("add memory: %v", err)
+	}
+
+	hits, err := repo.RecallSearch(ctx, "100%_match", 5, 200, 50)
+	if err != nil {
+		t.Fatalf("recall search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].ID != memory.ID {
+		t.Fatalf("expected escaped LIKE hit for memory %d, got %+v", memory.ID, hits)
+	}
 }
 
 func vectorOf(value float32) []float32 {

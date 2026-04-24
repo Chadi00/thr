@@ -7,14 +7,7 @@ import (
 	"strings"
 )
 
-func readTextArgFileOrStdin(argText string, filePath string) (string, error) {
-	if filePath != "" {
-		if argText != "" {
-			return "", fmt.Errorf("provide either text argument or --file, not both")
-		}
-		return readFile(filePath)
-	}
-
+func readTextArgOrExplicitStdin(argText string) (string, error) {
 	if argText != "" {
 		if argText == "-" {
 			return readFromStdin()
@@ -22,19 +15,7 @@ func readTextArgFileOrStdin(argText string, filePath string) (string, error) {
 		return argText, nil
 	}
 
-	if hasStdinInput() {
-		return readFromStdin()
-	}
-
-	return "", fmt.Errorf("no text provided; pass text argument, --file, or pipe stdin")
-}
-
-func readFile(path string) (string, error) {
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read file %q: %w", path, err)
-	}
-	return strings.TrimRight(string(body), "\n"), nil
+	return "", fmt.Errorf("no text provided; pass text argument or '-' for stdin")
 }
 
 func readFromReader(reader io.Reader) (string, error) {
@@ -51,7 +32,7 @@ func readFromStdin() (string, error) {
 		return "", err
 	}
 	if value == "" {
-		return "", fmt.Errorf("no text provided; pass text argument, --file, or pipe stdin")
+		return "", fmt.Errorf("no text provided; pass text argument or '-' for stdin")
 	}
 	return value, nil
 }

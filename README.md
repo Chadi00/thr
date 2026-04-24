@@ -14,18 +14,14 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 
 | Command | What it does |
 |--------|----------------|
-| `thr add [text]`, `thr add -f <file>`, or stdin | Save a new memory (text, file, or pipe) |
+| `thr add <text>` or `thr add -` | Save a new memory from text, or explicit stdin with `-` |
 | `thr list` | List stored memories (with ids) |
 | `thr show <id>` | Print one memory in full |
 | `thr ask <question>` | **Semantic** search: memories closest in meaning to the question (retrieval only; no LLM answer text) |
-| `thr search <query>` | **Keyword** search (SQLite FTS5 on words/tokens) |
-| `thr search --substring <query>` | **Substring** search over the raw text (SQL `LIKE`-style) |
-| `thr edit <id> [text]`, `thr edit <id> -f <file>`, or stdin | Replace a memory’s text |
+| `thr search <query>` | **Default text recall**: FTS + recent literal substring + fuzzy ranking |
+| `thr edit <id> <text>` or `thr edit <id> -` | Replace a memory’s text, or use explicit stdin with `-` |
 | `thr forget <id>` | Delete a memory |
-| `thr export` | Write all memories to JSONL (stdout) |
-| `thr import` | Import JSONL produced by `thr export` (from a file path, `thr import -` for stdin, or `-f <file>`) |
 | `thr stats` | Show database path and memory count |
-| `thr vacuum` | Run `VACUUM` on the SQLite database |
 | `thr prefetch` | Download the embedding model into the cache so the first add or ask is not slow |
 | `thr version` (or `thr` with `-v` / `--version`) | Print build version |
 | `thr completion` | Print a shell completion script — use `bash`, `zsh`, or `fish` as the argument |
@@ -36,12 +32,11 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 
 ## Examples
 
-**Add a memory** (argument, file, or pipe — pipes are for multiline or programmatic input):
+**Add a memory** (text argument, or explicit `-` for multiline/programmatic stdin):
 
 ```bash
 thr add "prefers small CLIs with good docs"
-thr add -f ./note.txt
-printf "line one\nline two\n" | thr add
+printf "line one\nline two\n" | thr add -
 ```
 
 **List, inspect, and search**
@@ -51,25 +46,22 @@ thr list
 thr list --json
 thr show 1
 thr ask "what are their CLI preferences?"        # meaning-based matches
-thr search "cli"                                 # word/token search (FTS5)
-thr search --substring "pref"                    # raw substring
+thr search "pref golnag cli"                     # text recall (FTS + substring + fuzzy)
 thr ask "deployment?" --json
 ```
 
-**Change, remove, and move data**
+**Change and remove data**
 
 ```bash
 thr edit 1 "updated text"
+printf "line one\nline two\n" | thr edit 1 -
 thr forget 1
-thr export > backup.jsonl
-thr import backup.jsonl
 ```
 
 **Database, model, and version**
 
 ```bash
 thr stats
-thr vacuum
 thr prefetch
 thr version
 # same as: thr -v
@@ -91,7 +83,8 @@ Use the numeric `id` from `thr list` (or from `ask` / `search` output) in `show`
 
 - **Database:** `~/.thr/thr.db` by default (override: `--db` or `THR_DB`).
 - **Embedding model cache:** under `~/.thr/models` by default (override: `THR_MODEL_CACHE`).
-- **Semantic index:** [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) vectors (768 dimensions) via sqlite-vec; **keywords:** SQLite FTS5.
+- **Semantic index:** [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) vectors (768 dimensions) via sqlite-vec.
+- **Text recall:** SQLite FTS5 plus bounded recent substring matching and fuzzy ranking.
 
 ## Contributing
 

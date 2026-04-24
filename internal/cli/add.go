@@ -9,13 +9,11 @@ import (
 )
 
 func newAddCommand(dbPath *string) *cobra.Command {
-	var filePath string
-
 	cmd := &cobra.Command{
-		Use:   "add [text|-]",
+		Use:   "add <text|->",
 		Short: "Store a memory",
-		Long:  "Add a memory from an argument, --file path, or stdin pipe. Use '-' as text to read stdin explicitly.",
-		Args:  cobra.MaximumNArgs(1),
+		Long:  "Add a memory from text. Use '-' to read from stdin explicitly.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			deps, cleanup, err := initRuntime(*dbPath, true, false)
@@ -24,11 +22,7 @@ func newAddCommand(dbPath *string) *cobra.Command {
 			}
 			defer cleanup()
 
-			argText := ""
-			if len(args) == 1 {
-				argText = args[0]
-			}
-			text, err := readTextArgFileOrStdin(argText, filePath)
+			text, err := readTextArgOrExplicitStdin(args[0])
 			if err != nil {
 				return err
 			}
@@ -46,7 +40,6 @@ func newAddCommand(dbPath *string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Read memory text from file path")
 
 	return cmd
 }

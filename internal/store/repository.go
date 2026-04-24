@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/Chadi00/thr/internal/domain"
@@ -329,6 +331,125 @@ func (r *Repository) SubstringSearch(ctx context.Context, query string, limit in
 	return results, nil
 }
 
+func (r *Repository) SubstringSearchRecent(ctx context.Context, query string, recentWindow int, limit int) ([]domain.Memory, error) {
+	if recentWindow <= 0 {
+		recentWindow = 2000
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	escaped := escapeLikePattern(strings.ToLower(query))
+	pattern := "%" + escaped + "%"
+	rows, err := r.db.QueryContext(ctx, `
+		WITH recent AS (
+			SELECT id, text, created_at, updated_at
+			FROM memories
+			ORDER BY updated_at DESC
+			LIMIT ?
+		)
+		SELECT id, text, created_at, updated_at
+		FROM recent
+		WHERE LOWER(text) LIKE ? ESCAPE '\'
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`, recentWindow, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent substring search query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]domain.Memory, 0)
+	for rows.Next() {
+		memory, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, memory)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent substring results: %w", err)
+	}
+	return results, nil
+}
+
+func (r *Repository) RecallSearch(ctx context.Context, query string, limit int, recentWindow int, candidateLimit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if recentWindow <= 0 {
+		recentWindow = 2000
+	}
+	if candidateLimit <= 0 {
+		candidateLimit = max(limit*8, 64)
+	}
+
+	candidates := make([]domain.Memory, 0, candidateLimit)
+	seen := make(map[int64]struct{}, candidateLimit)
+
+	ftsQuery := buildFTSQuery(query)
+	if ftsQuery != "" {
+		ftsHits, err := r.KeywordSearch(ctx, ftsQuery, candidateLimit)
+		if err == nil {
+			for _, memory := range ftsHits {
+				if len(candidates) >= candidateLimit {
+					break
+				}
+				if _, exists := seen[memory.ID]; exists {
+					continue
+				}
+				seen[memory.ID] = struct{}{}
+				candidates = append(candidates, memory)
+			}
+		}
+	}
+
+	if len(candidates) < candidateLimit {
+		recentLimit := candidateLimit - len(candidates)
+		recentHits, err := r.SubstringSearchRecent(ctx, query, recentWindow, recentLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, memory := range recentHits {
+			if _, exists := seen[memory.ID]; exists {
+				continue
+			}
+			seen[memory.ID] = struct{}{}
+			candidates = append(candidates, memory)
+		}
+	}
+
+	type scored struct {
+		memory domain.Memory
+		score  int
+	}
+	scoredCandidates := make([]scored, 0, len(candidates))
+	for _, candidate := range candidates {
+		scoredCandidates = append(scoredCandidates, scored{
+			memory: candidate,
+			score:  fuzzyScore(query, candidate.Text),
+		})
+	}
+	sort.SliceStable(scoredCandidates, func(i, j int) bool {
+		if scoredCandidates[i].score != scoredCandidates[j].score {
+			return scoredCandidates[i].score > scoredCandidates[j].score
+		}
+		return scoredCandidates[i].memory.UpdatedAt.After(scoredCandidates[j].memory.UpdatedAt)
+	})
+
+	results := make([]domain.Memory, 0, min(limit, len(scoredCandidates)))
+	for _, hit := range scoredCandidates {
+		if len(results) >= limit {
+			break
+		}
+		if hit.score < 0 {
+			continue
+		}
+		results = append(results, hit.memory)
+	}
+	return results, nil
+}
+
 func (r *Repository) CountMemories(ctx context.Context) (int64, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM memories`)
 	var count int64
@@ -400,4 +521,57 @@ func scanMemory(rows *sql.Rows) (domain.Memory, error) {
 
 func rollback(tx *sql.Tx) {
 	_ = tx.Rollback()
+}
+
+func escapeLikePattern(input string) string {
+	escaped := strings.ReplaceAll(input, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `%`, `\%`)
+	escaped = strings.ReplaceAll(escaped, `_`, `\_`)
+	return escaped
+}
+
+func buildFTSQuery(query string) string {
+	tokens := strings.Fields(strings.ToLower(query))
+	if len(tokens) == 0 {
+		return ""
+	}
+	clauses := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		token = strings.Trim(token, "\"'`.,!?;:()[]{}")
+		if token == "" {
+			continue
+		}
+		clauses = append(clauses, fmt.Sprintf("(%s OR %s*)", token, token))
+	}
+	return strings.Join(clauses, " OR ")
+}
+
+func fuzzyScore(query string, text string) int {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	haystack := strings.ToLower(text)
+	if needle == "" || haystack == "" {
+		return -1
+	}
+
+	if idx := strings.Index(haystack, needle); idx >= 0 {
+		return 100000 - idx
+	}
+
+	needle = strings.ReplaceAll(needle, " ", "")
+	haystackCompact := strings.ReplaceAll(haystack, " ", "")
+	if needle == "" || haystackCompact == "" {
+		return -1
+	}
+
+	pos := 0
+	gaps := 0
+	for i := 0; i < len(needle); i++ {
+		next := strings.IndexByte(haystackCompact[pos:], needle[i])
+		if next < 0 {
+			return -1
+		}
+		gaps += next
+		pos += next + 1
+	}
+	return 5000 - gaps
 }
