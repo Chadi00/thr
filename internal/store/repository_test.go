@@ -61,7 +61,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("unexpected keyword hits: %+v", keywordHits)
 	}
 
-	semanticHits, err := repo.SemanticSearch(ctx, vectorA, 1, identity)
+	semanticHits, err := repo.SemanticSearch(ctx, vectorA, 1, identity, DefaultSemanticMaxDistance)
 	if err != nil {
 		t.Fatalf("semantic search: %v", err)
 	}
@@ -111,6 +111,56 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	}
 	if len(recallHits) == 0 || recallHits[0].ID != m2.ID {
 		t.Fatalf("expected fuzzy recall hit for memory %d, got %+v", m2.ID, recallHits)
+	}
+}
+
+func TestSemanticSearchFiltersByMaxDistance(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-semantic-threshold.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+	identity := testEmbeddingIdentity()
+	closeVector := vectorOf(0.1)
+	farVector := vectorOf(0.9)
+
+	closeMemory, err := repo.AddMemory(ctx, "close semantic match", closeVector, identity)
+	if err != nil {
+		t.Fatalf("add close memory: %v", err)
+	}
+	if _, err := repo.AddMemory(ctx, "far semantic mismatch", farVector, identity); err != nil {
+		t.Fatalf("add far memory: %v", err)
+	}
+
+	filtered, err := repo.SemanticSearch(ctx, closeVector, 2, identity, DefaultSemanticMaxDistance)
+	if err != nil {
+		t.Fatalf("semantic search with threshold: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("expected threshold to return one hit, got %+v", filtered)
+	}
+	if filtered[0].Memory.ID != closeMemory.ID {
+		t.Fatalf("expected close memory %d, got %+v", closeMemory.ID, filtered)
+	}
+	if filtered[0].Distance > DefaultSemanticMaxDistance {
+		t.Fatalf("expected distance <= %.2f, got %.6f", DefaultSemanticMaxDistance, filtered[0].Distance)
+	}
+
+	unfiltered, err := repo.SemanticSearch(ctx, closeVector, 2, identity, 0)
+	if err != nil {
+		t.Fatalf("semantic search without threshold: %v", err)
+	}
+	if len(unfiltered) != 2 {
+		t.Fatalf("expected maxDistance <= 0 to preserve unfiltered results, got %+v", unfiltered)
 	}
 }
 

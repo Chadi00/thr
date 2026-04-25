@@ -17,16 +17,17 @@ import (
 var ErrMemoryNotFound = errors.New("memory not found")
 
 const (
-	DefaultListLimit          = 100
-	DefaultKeywordLimit       = 10
-	DefaultSemanticLimit      = 3
-	DefaultRecentWindow       = 2000
-	DefaultRecallCandidateMin = 64
-	MaxListLimit              = 1000
-	MaxSearchLimit            = 100
-	MaxSemanticLimit          = 100
-	MaxRecentWindow           = 5000
-	MaxRecallCandidates       = 1000
+	DefaultListLimit           = 100
+	DefaultKeywordLimit        = 10
+	DefaultSemanticLimit       = 3
+	DefaultSemanticMaxDistance = 0.80
+	DefaultRecentWindow        = 2000
+	DefaultRecallCandidateMin  = 64
+	MaxListLimit               = 1000
+	MaxSearchLimit             = 100
+	MaxSemanticLimit           = 100
+	MaxRecentWindow            = 5000
+	MaxRecallCandidates        = 1000
 )
 
 type EmbeddingIdentity struct {
@@ -215,7 +216,7 @@ func (r *Repository) ForgetMemory(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *Repository) SemanticSearch(ctx context.Context, embedding []float32, limit int, identity EmbeddingIdentity) ([]SemanticHit, error) {
+func (r *Repository) SemanticSearch(ctx context.Context, embedding []float32, limit int, identity EmbeddingIdentity, maxDistance float64) ([]SemanticHit, error) {
 	limit = clampLimit(limit, DefaultSemanticLimit, MaxSemanticLimit)
 	query, err := sqlite_vec.SerializeFloat32(embedding)
 	if err != nil {
@@ -251,6 +252,9 @@ func (r *Repository) SemanticSearch(ctx context.Context, embedding []float32, li
 		}
 		memory.CreatedAt = time.UnixMilli(createdUnixMillis).UTC()
 		memory.UpdatedAt = time.UnixMilli(updatedUnix).UTC()
+		if maxDistance > 0 && distance > maxDistance {
+			continue
+		}
 		hits = append(hits, SemanticHit{Memory: memory, Distance: distance})
 	}
 

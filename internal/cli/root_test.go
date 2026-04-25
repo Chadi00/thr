@@ -129,6 +129,32 @@ func TestIndexOnMissingDatabaseDoesNotCreateDBOrModelCache(t *testing.T) {
 	assertPathAbsent(t, modelCache)
 }
 
+func TestAskOnMissingDatabaseDoesNotCreateDBOrModelCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+
+	output := runRootCommand(t, "--db", dbPath, "ask", "what does the user prefer?")
+	if strings.TrimSpace(output) != "no matching memories" {
+		t.Fatalf("unexpected ask output: %q", output)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
+func TestAskRejectsInvalidMaxDistanceBeforeRuntimeInit(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+
+	err := executeRootCommand("--db", dbPath, "ask", "--max-distance", "0", "anything")
+	if err == nil || !strings.Contains(err.Error(), "--max-distance must be greater than 0 and at most 4") {
+		t.Fatalf("expected max-distance validation error, got %v", err)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
 func assertPathAbsent(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

@@ -47,6 +47,27 @@ func TestPrintSemanticResultsEscapesMultilineText(t *testing.T) {
 	}
 }
 
+func TestPrintSemanticResultsEmptyMatchesSearchOutput(t *testing.T) {
+	buf := new(bytes.Buffer)
+
+	PrintSemanticResults(buf, nil, true)
+
+	if got := strings.TrimSpace(buf.String()); got != "no matching memories" {
+		t.Fatalf("expected no-match semantic output, got %q", got)
+	}
+}
+
+func TestPrintSemanticResultsJSONEmptyArray(t *testing.T) {
+	buf := new(bytes.Buffer)
+
+	if err := PrintSemanticResultsJSON(buf, nil); err != nil {
+		t.Fatalf("print semantic json: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "[]" {
+		t.Fatalf("expected empty semantic json array, got %q", got)
+	}
+}
+
 func TestPrintHumanOutputEscapesTerminalControls(t *testing.T) {
 	memory := domain.Memory{ID: 9, Text: "safe\x1b[2J\a\b\u202eend", UpdatedAt: time.Unix(0, 0).UTC()}
 	buf := new(bytes.Buffer)

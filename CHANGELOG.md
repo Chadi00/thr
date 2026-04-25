@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated CLI help and docs so `thr` is treated as the command name rather than an expanded acronym.
 - Simplified the README quick start, uninstall wording, and release automation details.
+- `thr ask` now filters weak semantic matches with a default `--max-distance 0.80`, with `--max-distance 4` available for closest-results behavior.
 
 ### Fixed
 

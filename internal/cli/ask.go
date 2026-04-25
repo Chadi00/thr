@@ -4,11 +4,15 @@ import (
 	"fmt"
 
 	"github.com/Chadi00/thr/internal/output"
+	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
 )
 
+const maxSemanticDistance = 4.0
+
 func newAskCommand(dbPath *string) *cobra.Command {
 	var limit int
+	var maxDistance float64
 	var withDistance bool
 
 	cmd := &cobra.Command{
@@ -17,6 +21,10 @@ func newAskCommand(dbPath *string) *cobra.Command {
 		Long:  "ask performs vector retrieval over stored memories and returns the closest matches; it does not generate LLM answers.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if maxDistance <= 0 || maxDistance > maxSemanticDistance {
+				return fmt.Errorf("--max-distance must be greater than 0 and at most 4")
+			}
+
 			deps, cleanup, err := initReadRuntimeWithEmbedder(*dbPath, false)
 			if err != nil {
 				if isMissingDatabase(err) {
@@ -42,7 +50,7 @@ func newAskCommand(dbPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit, activeEmbeddingIdentity())
+			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit, activeEmbeddingIdentity(), maxDistance)
 			if err != nil {
 				return err
 			}
@@ -56,6 +64,7 @@ func newAskCommand(dbPath *string) *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&limit, "limit", "n", 3, "Maximum semantic results")
+	cmd.Flags().Float64Var(&maxDistance, "max-distance", store.DefaultSemanticMaxDistance, "Maximum vector distance for semantic results")
 	cmd.Flags().BoolVar(&withDistance, "with-distance", false, "Print vector distance score")
 
 	return cmd
