@@ -11,8 +11,8 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 
 	rootCmd := &cobra.Command{
 		Use:          "thr",
-		Short:        "Tiny History Recall",
-		Long:         "Tiny History Recall stores local memories and retrieves them with keyword or semantic search (retrieval only, no LLM-generated answers).",
+		Short:        "Save and find local memories",
+		Long:         "Store local memories and retrieve them with keyword or semantic search (retrieval only, no LLM-generated answers).",
 		SilenceUsage: true,
 		Version:      versionString(version, commit, buildDate),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -27,8 +27,6 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
 ```
 
-The uninstaller removes the binary and PATH snippet, then asks separately before deleting saved memories or the cached embedding model. If it cannot ask, it preserves both.
-
 ---
 
 ## Quick start
@@ -40,7 +38,6 @@ thr add "prefers small CLIs with good docs"
 thr list
 thr ask "what are their CLI preferences?"
 thr search "cli docs"
-thr index
 ```
 
 Full help: `thr --help` and `thr <command> --help`.
@@ -95,11 +92,3 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes by version.
-
----
-
-## Releases
-
-Pushing to `master` with a head commit whose subject starts with `feat:`, `fix:`, or `chore:` automatically creates the next patch tag and publishes a signed GitHub release.
-
----
