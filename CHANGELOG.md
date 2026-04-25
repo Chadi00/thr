@@ -10,7 +10,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Updated CLI help and docs so `thr` is treated as the command name rather than an expanded acronym.
-- Simplified the README quick start, uninstall notes, and release automation details.
+- Simplified the README quick start, uninstall wording, and release automation details.
+
+## [0.1.11] - 2026-04-25
+
+### Fixed
+
+- `uninstall.sh` now asks separately before deleting saved memories or the cached embedding model, preserving both when it cannot prompt.
+
+## [0.1.10] - 2026-04-25
+
+### Fixed
+
+- Release automation now waits for successful CI on the exact pushed commit before tagging, building, smoke testing, and publishing a release.
+- Installer PATH snippets now keep `$PATH` escaped in shell rc files so future shells expand it correctly.
+
+## [0.1.9] - 2026-04-25
+
+### Added
+
+- `thr index` rebuilds missing or stale semantic embeddings for the active local model.
+- Embedding metadata tracks model id, revision, manifest digest, dimension, and index time so stale semantic indexes can be detected.
+- `thr stats` reports active model identity, verification status, and semantic index health.
+- Release archives are now checked through signed `checksums.txt` metadata, with installer and smoke-test coverage for signature verification.
+
+### Changed
+
+- Semantic search now uses a pinned, SHA-256-verified `Qdrant/bge-base-en-v1.5-onnx-Q` model cache and re-downloads unverified model files.
+- Local database and model-cache paths are hardened with private filesystem permissions.
+- `thr ask` now stops with a clear `thr index` prompt when embeddings are missing or stale instead of searching an outdated semantic index.
+- `thr add` and `thr edit` validate memory text size before initializing storage or the embedding model, with `--max-bytes` available for overrides.
+- Plain-text output sanitizes control and format characters while preserving structured JSON output for scripts.
+- README install, prefetch, and contribution guidance was tightened around the primary macOS Homebrew path.
 
 ## [0.1.8] - 2026-04-24
 

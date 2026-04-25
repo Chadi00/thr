@@ -77,8 +77,8 @@ func TestMigrateRollsBackFailedMigration(t *testing.T) {
 	})
 
 	files := fstest.MapFS{
-		"migrations/001_good.sql": &fstest.MapFile{Data: []byte(`CREATE TABLE notes (id INTEGER PRIMARY KEY);`)},
-		"migrations/002_bad.sql":  &fstest.MapFile{Data: []byte(`INSERT INTO notes(id) VALUES (1); INVALID SQL;`)},
+		"migrations/001_good.sql": &fstest.MapFile{Data: []byte(`CREATE TABLE records (id INTEGER PRIMARY KEY);`)},
+		"migrations/002_bad.sql":  &fstest.MapFile{Data: []byte(`INSERT INTO records(id) VALUES (1); INVALID SQL;`)},
 	}
 
 	if err := migrate(db, files); err == nil {
@@ -94,8 +94,8 @@ func TestMigrateRollsBackFailedMigration(t *testing.T) {
 	}
 
 	var rows int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notes`).Scan(&rows); err != nil {
-		t.Fatalf("count notes rows: %v", err)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM records`).Scan(&rows); err != nil {
+		t.Fatalf("count records rows: %v", err)
 	}
 	if rows != 0 {
 		t.Fatalf("expected failed migration insert to roll back, got %d rows", rows)

@@ -333,7 +333,7 @@ func BenchmarkRecallSearch(b *testing.B) {
 	repo := NewRepository(db)
 	identity := testEmbeddingIdentity()
 	for i := 0; i < 2500; i++ {
-		text := fmt.Sprintf("memory %04d about project notes, semantic search, privacy, and indexed recall", i)
+		text := fmt.Sprintf("memory %04d about project context, semantic search, privacy, and indexed recall", i)
 		if _, err := repo.AddMemory(ctx, text, vectorOf(float32(i%10)/10), identity); err != nil {
 			b.Fatalf("add memory: %v", err)
 		}

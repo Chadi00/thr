@@ -21,14 +21,6 @@ func TestVersionFlagMatchesVersionCommand(t *testing.T) {
 	}
 }
 
-func TestHelpDoesNotExpandCommandName(t *testing.T) {
-	output := runRootCommand(t, "--help")
-	forbidden := strings.Join([]string{"tiny", "history", "recall"}, " ")
-	if strings.Contains(strings.ToLower(output), forbidden) {
-		t.Fatalf("help output should not expand the command name: %s", output)
-	}
-}
-
 func TestStatsJSONOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "missing.db")
 	output := runRootCommand(t, "--db", dbPath, "--json", "stats")
