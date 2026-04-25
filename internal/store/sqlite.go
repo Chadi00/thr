@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
+	"github.com/Chadi00/thr/internal/privacy"
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -14,15 +16,31 @@ import (
 var ErrDatabaseNotFound = errors.New("database not found")
 
 type openOptions struct {
+	path       string
 	dsn        string
 	initialize bool
+	readOnly   bool
 }
 
 func Open(path string) (*sql.DB, error) {
+	if err := privacy.EnsurePrivateFile(path); err != nil {
+		return nil, err
+	}
 	return open(openOptions{
-		dsn:        fmt.Sprintf("file:%s?_foreign_keys=on", path),
+		path:       path,
+		dsn:        sqliteDSN(path, map[string]string{"_foreign_keys": "on"}),
 		initialize: true,
 	})
+}
+
+func OpenExistingWritable(path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrDatabaseNotFound
+		}
+		return nil, fmt.Errorf("stat sqlite database: %w", err)
+	}
+	return Open(path)
 }
 
 func OpenExisting(path string) (*sql.DB, error) {
@@ -32,22 +50,43 @@ func OpenExisting(path string) (*sql.DB, error) {
 		}
 		return nil, fmt.Errorf("stat sqlite database: %w", err)
 	}
-	readOnly, err := shouldOpenImmutable(path)
+
+	if canWriteDatabase(path) {
+		db, err := open(openOptions{
+			path:       path,
+			dsn:        sqliteDSN(path, map[string]string{"mode": "rw", "_foreign_keys": "on"}),
+			initialize: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return db, nil
+	}
+
+	db, err := open(openOptions{
+		path:       path,
+		dsn:        sqliteDSN(path, map[string]string{"mode": "ro", "immutable": "1", "_foreign_keys": "on"}),
+		initialize: false,
+		readOnly:   true,
+	})
 	if err != nil {
 		return nil, err
 	}
-	dsn := fmt.Sprintf("file:%s?mode=ro&_foreign_keys=on", path)
-	if readOnly {
-		dsn = fmt.Sprintf("file:%s?mode=ro&immutable=1&_foreign_keys=on", path)
+	if err := CheckCompatible(db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
-	return open(openOptions{
-		dsn:        dsn,
-		initialize: false,
-	})
+	return db, nil
 }
 
 func open(options openOptions) (*sql.DB, error) {
 	sqlite_vec.Auto()
+
+	if !options.readOnly {
+		if err := privacy.HardenSQLiteFiles(options.path); err != nil {
+			return nil, err
+		}
+	}
 
 	db, err := sql.Open("sqlite3", options.dsn)
 	if err != nil {
@@ -63,6 +102,11 @@ func open(options openOptions) (*sql.DB, error) {
 	}
 
 	if err := Migrate(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	if err := privacy.HardenSQLiteFiles(options.path); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -85,22 +129,46 @@ func applyPragmas(db *sql.DB) error {
 	return nil
 }
 
-func shouldOpenImmutable(path string) (bool, error) {
-	fileReadOnly, err := lacksWritePermission(path)
-	if err != nil {
-		return false, fmt.Errorf("stat sqlite database: %w", err)
+func sqliteDSN(path string, params map[string]string) string {
+	values := url.Values{}
+	for key, value := range params {
+		values.Set(key, value)
 	}
-	dirReadOnly, err := lacksWritePermission(filepath.Dir(path))
-	if err != nil {
-		return false, fmt.Errorf("stat sqlite database directory: %w", err)
-	}
-	return fileReadOnly || dirReadOnly, nil
+	return (&url.URL{
+		Scheme:   "file",
+		Path:     path,
+		RawQuery: values.Encode(),
+	}).String()
 }
 
-func lacksWritePermission(path string) (bool, error) {
-	info, err := os.Stat(path)
+func canWriteDatabase(path string) bool {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
-		return false, err
+		return false
 	}
-	return info.Mode().Perm()&0o222 == 0, nil
+	_ = file.Close()
+
+	return probeWritableDir(filepath.Dir(path)) == nil
+}
+
+func probeWritableDir(dir string) error {
+	file, err := os.CreateTemp(dir, ".thr-write-probe-*")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	closeErr := file.Close()
+	removeErr := os.Remove(name)
+	if closeErr != nil {
+		return closeErr
+	}
+	return removeErr
+}
+
+func IsMigrationRequired(err error) bool {
+	return errors.Is(err, ErrMigrationRequired)
+}
+
+func IsDatabaseNotFound(err error) bool {
+	return errors.Is(err, ErrDatabaseNotFound)
 }

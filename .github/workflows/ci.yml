@@ -25,6 +25,11 @@ jobs:
       - name: Verify shell scripts parse
         run: bash -n install.sh uninstall.sh scripts/installer_smoke.sh
 
+      - name: Run shellcheck
+        run: |
+          brew list --versions shellcheck >/dev/null 2>&1 || brew install shellcheck
+          shellcheck install.sh uninstall.sh scripts/installer_smoke.sh
+
       - name: Run Go tests
         run: go test ./...
 

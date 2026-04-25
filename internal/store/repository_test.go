@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,11 +27,13 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 	vectorA := vectorOf(0.1)
 	vectorB := vectorOf(0.9)
 
-	m1, err := repo.AddMemory(ctx, "the user likes sports cars", vectorA)
+	identity := testEmbeddingIdentity()
+
+	m1, err := repo.AddMemory(ctx, "the user likes sports cars", vectorA, identity)
 	if err != nil {
 		t.Fatalf("add m1: %v", err)
 	}
-	m2, err := repo.AddMemory(ctx, "the user prefers motorcycles", vectorB)
+	m2, err := repo.AddMemory(ctx, "the user prefers motorcycles", vectorB, identity)
 	if err != nil {
 		t.Fatalf("add m2: %v", err)
 	}
@@ -58,7 +61,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("unexpected keyword hits: %+v", keywordHits)
 	}
 
-	semanticHits, err := repo.SemanticSearch(ctx, vectorA, 1)
+	semanticHits, err := repo.SemanticSearch(ctx, vectorA, 1, identity)
 	if err != nil {
 		t.Fatalf("semantic search: %v", err)
 	}
@@ -66,7 +69,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected top semantic hit to be %d, got %+v", m1.ID, semanticHits)
 	}
 
-	updated, err := repo.EditMemory(ctx, m2.ID, "the user prefers classic sports cars", vectorA)
+	updated, err := repo.EditMemory(ctx, m2.ID, "the user prefers classic sports cars", vectorA, identity)
 	if err != nil {
 		t.Fatalf("edit memory: %v", err)
 	}
@@ -126,7 +129,7 @@ func TestRecallSearchFuzzySubsequence(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	memory, err := repo.AddMemory(ctx, "rust ownership tips", vectorOf(0.3))
+	memory, err := repo.AddMemory(ctx, "rust ownership tips", vectorOf(0.3), testEmbeddingIdentity())
 	if err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
@@ -157,7 +160,7 @@ func TestRecallSearchEscapesLikePattern(t *testing.T) {
 	repo := NewRepository(db)
 
 	vector := vectorOf(0.2)
-	memory, err := repo.AddMemory(ctx, "literal 100%_match and more", vector)
+	memory, err := repo.AddMemory(ctx, "literal 100%_match and more", vector, testEmbeddingIdentity())
 	if err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
@@ -186,7 +189,7 @@ func TestKeywordSearchTreatsInputAsPlainText(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	if _, err := repo.AddMemory(ctx, `she said "quoted" syntax literally`, vectorOf(0.4)); err != nil {
+	if _, err := repo.AddMemory(ctx, `she said "quoted" syntax literally`, vectorOf(0.4), testEmbeddingIdentity()); err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
 
@@ -214,7 +217,7 @@ func TestRecallSearchDoesNotHideFTSFailures(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	if _, err := repo.AddMemory(ctx, "semantic recall needs a working fts index", vectorOf(0.5)); err != nil {
+	if _, err := repo.AddMemory(ctx, "semantic recall needs a working fts index", vectorOf(0.5), testEmbeddingIdentity()); err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
 	if _, err := db.Exec(`DROP TABLE memory_fts`); err != nil {
@@ -226,10 +229,120 @@ func TestRecallSearchDoesNotHideFTSFailures(t *testing.T) {
 	}
 }
 
+func TestIndexHealthTracksStaleAndMissingEmbeddings(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "thr-index-health.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	repo := NewRepository(db)
+	active := testEmbeddingIdentity()
+	stale := EmbeddingIdentity{
+		ModelID:        "old-model",
+		ModelRevision:  "old-revision",
+		ManifestSHA256: "old-manifest",
+		Dimension:      768,
+	}
+	if _, err := repo.AddMemory(ctx, "fresh", vectorOf(0.1), active); err != nil {
+		t.Fatalf("add fresh memory: %v", err)
+	}
+	staleMemory, err := repo.AddMemory(ctx, "stale", vectorOf(0.2), stale)
+	if err != nil {
+		t.Fatalf("add stale memory: %v", err)
+	}
+	missing, err := repo.AddMemory(ctx, "missing", vectorOf(0.3), active)
+	if err != nil {
+		t.Fatalf("add missing memory: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM memory_embeddings WHERE rowid = ?`, missing.ID); err != nil {
+		t.Fatalf("delete vector row: %v", err)
+	}
+
+	health, err := repo.IndexHealth(ctx, active)
+	if err != nil {
+		t.Fatalf("index health: %v", err)
+	}
+	if health.Memories != 3 || health.Indexed != 1 || health.Stale != 1 || health.MissingEmbeddings != 1 {
+		t.Fatalf("unexpected health: %+v", health)
+	}
+
+	needsIndex, err := repo.ListMemoriesNeedingIndex(ctx, active)
+	if err != nil {
+		t.Fatalf("list memories needing index: %v", err)
+	}
+	got := map[int64]bool{}
+	for _, memory := range needsIndex {
+		got[memory.ID] = true
+	}
+	if !got[staleMemory.ID] || !got[missing.ID] || len(got) != 2 {
+		t.Fatalf("unexpected memories needing index: %+v", needsIndex)
+	}
+
+	if err := repo.UpsertMemoryEmbedding(ctx, staleMemory.ID, vectorOf(0.4), active); err != nil {
+		t.Fatalf("update stale embedding: %v", err)
+	}
+	if err := repo.UpsertMemoryEmbedding(ctx, missing.ID, vectorOf(0.5), active); err != nil {
+		t.Fatalf("update missing embedding: %v", err)
+	}
+	health, err = repo.IndexHealth(ctx, active)
+	if err != nil {
+		t.Fatalf("index health after repair: %v", err)
+	}
+	if health.Indexed != 3 || health.Stale != 0 || health.MissingEmbeddings != 0 {
+		t.Fatalf("unexpected repaired health: %+v", health)
+	}
+}
+
 func vectorOf(value float32) []float32 {
 	vec := make([]float32, 768)
 	for i := range vec {
 		vec[i] = value
 	}
 	return vec
+}
+
+func testEmbeddingIdentity() EmbeddingIdentity {
+	return EmbeddingIdentity{
+		ModelID:        "test-model",
+		ModelRevision:  "test-revision",
+		ManifestSHA256: "test-manifest",
+		Dimension:      768,
+	}
+}
+
+func BenchmarkRecallSearch(b *testing.B) {
+	ctx := context.Background()
+	dbPath := filepath.Join(b.TempDir(), "thr-recall-bench.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			b.Skip("sqlite build does not include fts5")
+		}
+		b.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewRepository(db)
+	identity := testEmbeddingIdentity()
+	for i := 0; i < 2500; i++ {
+		text := fmt.Sprintf("memory %04d about project notes, semantic search, privacy, and indexed recall", i)
+		if _, err := repo.AddMemory(ctx, text, vectorOf(float32(i%10)/10), identity); err != nil {
+			b.Fatalf("add memory: %v", err)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := repo.RecallSearch(ctx, "privacy indexed recall", 25, DefaultRecentWindow, MaxRecallCandidates); err != nil {
+			b.Fatalf("recall search: %v", err)
+		}
+	}
 }

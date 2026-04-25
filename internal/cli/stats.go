@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/Chadi00/thr/internal/config"
+	"github.com/Chadi00/thr/internal/embed"
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,15 @@ func newStatsCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 
-			stats := output.Stats{DBPath: cfg.DBPath, ModelCache: cfg.ModelCache}
+			model := embed.ActiveModelStatus(cfg.ModelCache)
+			stats := output.Stats{
+				DBPath:              cfg.DBPath,
+				ModelCache:          cfg.ModelCache,
+				ModelID:             model.ModelID,
+				ModelRevision:       model.ModelRevision,
+				ModelManifestSHA256: model.ManifestSHA256,
+				ModelVerified:       model.Verified,
+			}
 			deps, cleanup, err := initReadRuntime(*dbPath)
 			if err != nil {
 				if !isMissingDatabase(err) {
@@ -24,11 +33,14 @@ func newStatsCommand(dbPath *string) *cobra.Command {
 				}
 			} else {
 				defer cleanup()
-				count, err := deps.repo.CountMemories(cmd.Context())
+				health, err := deps.repo.IndexHealth(cmd.Context(), activeEmbeddingIdentity())
 				if err != nil {
 					return err
 				}
-				stats.Memories = count
+				stats.Memories = health.Memories
+				stats.IndexedMemories = health.Indexed
+				stats.StaleMemories = health.Stale
+				stats.MissingEmbeddings = health.MissingEmbeddings
 			}
 
 			if isJSONOutput(cmd) {

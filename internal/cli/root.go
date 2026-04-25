@@ -44,6 +44,7 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 		newStatsCommand(&dbPath),
 		newVersionCommand(version, commit, buildDate),
 		newPrefetchCommand(&dbPath),
+		newIndexCommand(&dbPath),
 	)
 
 	return rootCmd

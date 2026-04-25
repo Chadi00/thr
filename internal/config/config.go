@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Chadi00/thr/internal/privacy"
 )
 
 const (
@@ -38,15 +40,29 @@ func Load(dbFlag string) (Config, error) {
 }
 
 func (c Config) EnsureDBDir() error {
-	if err := os.MkdirAll(filepath.Dir(c.DBPath), 0o755); err != nil {
+	if err := privacy.EnsurePrivateDir(filepath.Dir(c.DBPath)); err != nil {
 		return fmt.Errorf("create db directory: %w", err)
 	}
 	return nil
 }
 
+func (c Config) HardenDBDirIfExists() error {
+	if err := privacy.HardenDirIfExists(filepath.Dir(c.DBPath)); err != nil {
+		return fmt.Errorf("harden db directory: %w", err)
+	}
+	return nil
+}
+
 func (c Config) EnsureModelCacheDir() error {
-	if err := os.MkdirAll(c.ModelCache, 0o755); err != nil {
+	if err := privacy.EnsurePrivateDir(c.ModelCache); err != nil {
 		return fmt.Errorf("create model cache directory: %w", err)
+	}
+	return nil
+}
+
+func (c Config) HardenModelCacheIfExists() error {
+	if err := privacy.HardenTreeIfExists(c.ModelCache); err != nil {
+		return fmt.Errorf("harden model cache: %w", err)
 	}
 	return nil
 }

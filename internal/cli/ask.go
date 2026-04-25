@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -28,11 +30,19 @@ func newAskCommand(dbPath *string) *cobra.Command {
 			}
 			defer cleanup()
 
+			health, err := deps.repo.IndexHealth(cmd.Context(), activeEmbeddingIdentity())
+			if err != nil {
+				return err
+			}
+			if health.Stale > 0 || health.MissingEmbeddings > 0 {
+				return fmt.Errorf("semantic index needs updating; run 'thr index'")
+			}
+
 			vector, err := deps.embedder.QueryEmbed(args[0])
 			if err != nil {
 				return err
 			}
-			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit)
+			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit, activeEmbeddingIdentity())
 			if err != nil {
 				return err
 			}

@@ -65,13 +65,16 @@ create_release_fixture() {
   tar -czf "$WORK_DIR/release/$archive" -C "$WORK_DIR/release" thr
   checksum="$(sha256_file "$WORK_DIR/release/$archive")"
   printf '%s  %s\n' "$checksum" "$archive" >"$WORK_DIR/release/checksums.txt"
+  : >"$WORK_DIR/release/checksums.txt.minisig"
 }
 
 setup_fake_brew() {
   local brew_bin="$WORK_DIR/fakebrew/bin/brew"
+  local minisign_bin="$WORK_DIR/fakebrew/bin/minisign"
   local brew_prefix="$WORK_DIR/homebrew"
 
   mkdir -p "$WORK_DIR/fakebrew/bin" "$brew_prefix/bin"
+  : >"$brew_prefix/.onnxruntime-installed"
   cat >"$brew_bin" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -104,8 +107,14 @@ case "${1:-}" in
 esac
 EOF
   chmod +x "$brew_bin"
+  cat >"$minisign_bin" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "$minisign_bin"
   export THR_SMOKE_BREW_PREFIX="$brew_prefix"
-  export PATH="$WORK_DIR/fakebrew/bin:$PATH"
+  export PATH="$WORK_DIR/fakebrew/bin:$brew_prefix/bin:$PATH"
 }
 
 prepare_home() {
@@ -149,6 +158,8 @@ main() {
     export THR_UNINSTALL_TEST_BIN_DIRS="$WORK_DIR/homebrew/bin"
   else
     command -v brew >/dev/null 2>&1 || fail 'release smoke requires Homebrew on macOS runners'
+    brew list --versions minisign >/dev/null 2>&1 || brew install minisign
+    brew list --versions onnxruntime >/dev/null 2>&1 || brew install onnxruntime
     install_dir="$(brew --prefix)/bin"
     unset THR_UNINSTALL_TEST_BIN_DIRS || true
   fi
@@ -159,11 +170,14 @@ main() {
   [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the Homebrew bin dir'
   assert_path_block_present
   assert_thr_usable
+  mkdir -p "$HOME/.thr"
+  : >"$HOME/.thr/thr.db"
 
   log 'Running uninstall smoke test'
   bash "$ROOT_DIR/uninstall.sh"
 
   [[ ! -e "$install_dir/thr" ]] || fail 'uninstall left thr behind'
+  [[ -e "$HOME/.thr/thr.db" ]] || fail 'uninstall removed data without confirmation'
   assert_path_block_removed
 }
 

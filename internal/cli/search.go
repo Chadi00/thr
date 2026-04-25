@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/Chadi00/thr/internal/output"
+	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +28,8 @@ func newSearchCommand(dbPath *string) *cobra.Command {
 			}
 			defer cleanup()
 
-			results, err := deps.repo.RecallSearch(cmd.Context(), args[0], limit, 2000, max(limit*8, 64))
+			effectiveLimit := min(max(limit, 1), store.MaxSearchLimit)
+			results, err := deps.repo.RecallSearch(cmd.Context(), args[0], effectiveLimit, store.DefaultRecentWindow, max(effectiveLimit*8, store.DefaultRecallCandidateMin))
 			if err != nil {
 				return err
 			}

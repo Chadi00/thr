@@ -13,8 +13,21 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
+var ErrMigrationRequired = errors.New("database needs an automatic update but is not writable")
+
 func Migrate(db *sql.DB) error {
 	return migrate(db, migrationFiles)
+}
+
+func CheckCompatible(db *sql.DB) error {
+	pending, err := pendingMigrations(db, migrationFiles)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("%w", ErrMigrationRequired)
+	}
+	return nil
 }
 
 type migrationReader interface {
@@ -84,4 +97,63 @@ func migrate(db *sql.DB, files migrationReader) error {
 	}
 
 	return nil
+}
+
+func pendingMigrations(db *sql.DB, files migrationReader) ([]string, error) {
+	names, err := migrationNames(files)
+	if err != nil {
+		return nil, err
+	}
+
+	if !schemaMigrationsExists(db) {
+		return names, nil
+	}
+
+	applied := make(map[string]struct{}, len(names))
+	rows, err := db.Query(`SELECT name FROM schema_migrations`)
+	if err != nil {
+		return nil, fmt.Errorf("read schema migrations: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan schema migration: %w", err)
+		}
+		applied[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate schema migrations: %w", err)
+	}
+
+	pending := make([]string, 0)
+	for _, name := range names {
+		if _, exists := applied[name]; !exists {
+			pending = append(pending, name)
+		}
+	}
+	return pending, nil
+}
+
+func schemaMigrationsExists(db *sql.DB) bool {
+	var exists int
+	err := db.QueryRow(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&exists)
+	return err == nil
+}
+
+func migrationNames(files migrationReader) ([]string, error) {
+	entries, err := files.ReadDir("migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read migrations: %w", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names, nil
 }

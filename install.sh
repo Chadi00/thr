@@ -6,6 +6,7 @@ THR_PATH_MARKER="# thr install: add Homebrew bin to PATH (https://github.com/Cha
 THR_OLD_PATH_MARKER="# thr install: add thr bin dir to PATH (https://github.com/Chadi00/thr)"
 THR_OLD_GO_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
 THR_DOWNLOAD_BASE_URL="${THR_INSTALL_TEST_BASE_URL:-https://github.com/${REPO_SLUG}/releases/latest/download}"
+THR_MINISIGN_PUBLIC_KEY="RWQrobAhNMKgHfSWqGw98XeinTX0kLJe5W2Fc0t/fpM2XOTvryUOUpuM"
 
 THR_TMPDIR=""
 THR_INSTALLED_BIN=""
@@ -21,6 +22,26 @@ warn() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+confirm() {
+  local prompt="$1"
+  local reply
+
+  if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+    return 1
+  fi
+
+  printf '%s [y/N] ' "$prompt" >&3
+  IFS= read -r reply <&3 || {
+    exec 3>&-
+    return 1
+  }
+  exec 3>&-
+  case "$reply" in
+    y | Y | yes | YES | Yes) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 cleanup() {
@@ -54,8 +75,27 @@ ensure_onnxruntime() {
     return 0
   fi
 
+  if ! confirm "Install ONNX Runtime with Homebrew?"; then
+    warn "ONNX Runtime is required to run thr semantic search. Re-run install in a terminal and approve the prompt."
+    return 1
+  fi
+
   log "Installing ONNX Runtime via Homebrew..."
   brew install onnxruntime
+}
+
+ensure_minisign() {
+  if need_cmd minisign; then
+    return 0
+  fi
+
+  if ! confirm "Install minisign with Homebrew to verify the thr release?"; then
+    warn "minisign is required to verify thr release checksums."
+    return 1
+  fi
+
+  log "Installing minisign via Homebrew..."
+  brew install minisign
 }
 
 normalize_arch() {
@@ -80,8 +120,12 @@ sha256_file() {
 download_release_binary() {
   local arch archive expected actual
 
-  if ! need_cmd curl || ! need_cmd tar; then
-    warn "Install requires curl and tar."
+  if ! need_cmd curl || ! need_cmd tar || ! need_cmd minisign; then
+    warn "Install requires curl, tar, and minisign."
+    return 1
+  fi
+  if [[ "$THR_MINISIGN_PUBLIC_KEY" == RWTODO_* && -z "${THR_INSTALL_TEST_BASE_URL:-}" ]]; then
+    warn "Release verification key is not configured."
     return 1
   fi
 
@@ -92,6 +136,16 @@ download_release_binary() {
   log "Downloading ${archive}..."
   curl -fsSL "${THR_DOWNLOAD_BASE_URL}/${archive}" -o "${THR_TMPDIR}/${archive}"
   curl -fsSL "${THR_DOWNLOAD_BASE_URL}/checksums.txt" -o "${THR_TMPDIR}/checksums.txt"
+  curl -fsSL "${THR_DOWNLOAD_BASE_URL}/checksums.txt.minisig" -o "${THR_TMPDIR}/checksums.txt.minisig"
+
+  if [[ "$THR_MINISIGN_PUBLIC_KEY" == RWTODO_* && -n "${THR_INSTALL_TEST_BASE_URL:-}" ]]; then
+    warn "Skipping signature verification for installer test fixture because the release public key is not configured."
+  else
+    if ! minisign -Vm "${THR_TMPDIR}/checksums.txt" -x "${THR_TMPDIR}/checksums.txt.minisig" -P "$THR_MINISIGN_PUBLIC_KEY" >/dev/null; then
+      warn "Could not verify signed release checksums."
+      return 1
+    fi
+  fi
 
   expected="$(awk -v name="$archive" '$2 == name {print $1; exit}' "${THR_TMPDIR}/checksums.txt")"
   if [[ -z "$expected" ]]; then
@@ -105,7 +159,12 @@ download_release_binary() {
     return 1
   fi
 
-  tar -xzf "${THR_TMPDIR}/${archive}" -C "$THR_TMPDIR"
+  if [[ "$(tar -tzf "${THR_TMPDIR}/${archive}")" != "thr" ]]; then
+    warn "Archive did not contain exactly the expected thr binary entry."
+    return 1
+  fi
+
+  tar -xzf "${THR_TMPDIR}/${archive}" -C "$THR_TMPDIR" thr
   if [[ ! -f "${THR_TMPDIR}/thr" ]]; then
     warn "Archive did not contain a thr binary."
     return 1
@@ -156,6 +215,12 @@ ensure_dir_on_path() {
 
   rc="$(shell_rc_file)"
   mkdir -p "$(dirname "$rc")"
+
+  if ! confirm "Add ${dir} to PATH in ${rc}?"; then
+    warn "Skipped PATH update. Run ${dir}/thr directly or add ${dir} to PATH later."
+    return 0
+  fi
+
   strip_thr_path_blocks "$rc"
   {
     printf '\n%s\n' "$THR_PATH_MARKER"
@@ -219,6 +284,7 @@ prefetch_model() {
 main() {
   ensure_macos
   ensure_homebrew
+  ensure_minisign
   download_release_binary
   ensure_onnxruntime
   install_binary

@@ -35,6 +35,11 @@ func TestStatsJSONOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 	if got := stats["memories"]; got != float64(0) {
 		t.Fatalf("expected 0 memories, got %#v", got)
 	}
+	for _, key := range []string{"model_id", "model_revision", "model_manifest_sha256", "model_verified", "indexed_memories", "stale_memories", "missing_embeddings"} {
+		if _, ok := stats[key]; !ok {
+			t.Fatalf("expected stats json to include %q: %#v", key, stats)
+		}
+	}
 	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
 		t.Fatalf("expected stats to leave missing db absent, stat err=%v", err)
 	}
@@ -60,6 +65,62 @@ func TestShowOnMissingDatabaseReturnsNotFound(t *testing.T) {
 	err := root.ExecuteContext(context.Background())
 	if err == nil || err.Error() != "memory 1 not found" {
 		t.Fatalf("expected memory not found, got %v", err)
+	}
+}
+
+func TestInvalidAddInputDoesNotCreateDBOrModelCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+
+	err := executeRootCommand("--db", dbPath, "add", "--max-bytes", "3", "abcd")
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected too large error, got %v", err)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
+func TestInvalidEditIDDoesNotCreateDBOrModelCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+
+	err := executeRootCommand("--db", dbPath, "edit", "nope", "replacement")
+	if err == nil || !strings.Contains(err.Error(), "invalid id") {
+		t.Fatalf("expected invalid id error, got %v", err)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
+func TestInvalidForgetIDDoesNotCreateDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+
+	err := executeRootCommand("--db", dbPath, "forget", "nope")
+	if err == nil || !strings.Contains(err.Error(), "invalid id") {
+		t.Fatalf("expected invalid id error, got %v", err)
+	}
+	assertPathAbsent(t, dbPath)
+}
+
+func TestIndexOnMissingDatabaseDoesNotCreateDBOrModelCache(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+
+	output := runRootCommand(t, "--db", dbPath, "index")
+	if strings.TrimSpace(output) != "no memories stored" {
+		t.Fatalf("unexpected index output: %q", output)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
+func assertPathAbsent(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be absent, stat err=%v", path, err)
 	}
 }
 
@@ -128,4 +189,13 @@ func runRootCommand(t *testing.T, args ...string) string {
 		t.Fatalf("execute %v: %v", args, err)
 	}
 	return stdout.String()
+}
+
+func executeRootCommand(args ...string) error {
+	root := NewRootCommand("v1.2.3", "abc123", "2026-04-24T00:00:00Z")
+	stdout := new(bytes.Buffer)
+	root.SetOut(stdout)
+	root.SetErr(stdout)
+	root.SetArgs(args)
+	return root.ExecuteContext(context.Background())
 }

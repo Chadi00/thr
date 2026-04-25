@@ -27,6 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
 ```
 
+The uninstaller removes the binary and PATH snippet, then asks before deleting saved memories and the model cache. If it cannot ask, it preserves `~/.thr`.
+
 ---
 
 ## Quick start
@@ -38,6 +40,7 @@ thr add "prefers small CLIs with good docs"
 thr list
 thr ask "what are their CLI preferences?"
 thr search "cli docs"
+thr index
 ```
 
 Full help: `thr --help` and `thr <command> --help`.
@@ -57,11 +60,12 @@ Full help: `thr --help` and `thr <command> --help`.
 | `thr search <query>` | Text recall: FTS + substring + fuzzy / subsequence ranking (recent window) |
 | `thr edit <id> <text>` · `thr edit <id> -` | Replace a memory |
 | `thr forget <id>` | Delete a memory |
+| `thr index` | Rebuild missing or stale semantic search embeddings |
 | `thr stats` | Database path and count |
 | `thr prefetch` | Cache the embedding model |
 | `thr version` | Build version (`-v` / `--version` also work) |
 
-**Globals:** `--db <path>` or `THR_DB` for the database. On read commands, `--json` emits stable JSON for scripts and agents.
+**Globals:** `--db <path>` or `THR_DB` for the database. On read commands, `--json` emits stable JSON for scripts and agents. `add` and `edit` accept `--max-bytes` to raise or lower the memory text size limit.
 
 ---
 
@@ -72,7 +76,9 @@ Full help: `thr --help` and `thr <command> --help`.
 | Database | `~/.thr/thr.db` |
 | Embedding cache | `~/.thr/models` (`THR_MODEL_CACHE` overrides) |
 
-Semantic vectors use [BAAI/bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) (768-d) with sqlite-vec. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
+thr stores memories as local plaintext in SQLite and hardens the default data and model-cache paths with private filesystem permissions. It does not encrypt memories at rest.
+
+Semantic vectors use a pinned, SHA-256-verified [Qdrant/bge-base-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-base-en-v1.5-onnx-Q) model (768-d) with sqlite-vec. If the active model changes in a future release, `thr index` rebuilds semantic embeddings while preserving saved memories. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
 
 Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
 
@@ -89,5 +95,11 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes by version.
+
+---
+
+## Releases
+
+Pushing to `master` with a head commit whose subject starts with `feat:`, `fix:`, or `chore:` automatically creates the next patch tag and publishes a signed GitHub release.
 
 ---

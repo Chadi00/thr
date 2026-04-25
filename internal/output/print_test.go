@@ -46,3 +46,52 @@ func TestPrintSemanticResultsEscapesMultilineText(t *testing.T) {
 		t.Fatalf("expected escaped multiline text, got %q", got)
 	}
 }
+
+func TestPrintHumanOutputEscapesTerminalControls(t *testing.T) {
+	memory := domain.Memory{ID: 9, Text: "safe\x1b[2J\a\b\u202eend", UpdatedAt: time.Unix(0, 0).UTC()}
+	buf := new(bytes.Buffer)
+
+	PrintSearchResults(buf, []domain.Memory{memory})
+
+	got := buf.String()
+	for _, raw := range []string{"\x1b", "\a", "\b", "\u202e"} {
+		if strings.Contains(got, raw) {
+			t.Fatalf("expected raw control %q to be escaped in %q", raw, got)
+		}
+	}
+	for _, escaped := range []string{`\x1b`, `\x07`, `\x08`, `\u202e`} {
+		if !strings.Contains(got, escaped) {
+			t.Fatalf("expected escaped control %q in %q", escaped, got)
+		}
+	}
+}
+
+func TestPrintMemoryPreservesNewlinesButEscapesControls(t *testing.T) {
+	memory := domain.Memory{ID: 2, Text: "line one\nline two\x1b]52;c;bad\a", UpdatedAt: time.Unix(0, 0).UTC()}
+	buf := new(bytes.Buffer)
+
+	PrintMemory(buf, memory)
+
+	got := buf.String()
+	if !strings.Contains(got, "line one\nline two") {
+		t.Fatalf("expected show output to preserve memory newlines, got %q", got)
+	}
+	if strings.Contains(got, "\x1b") || strings.Contains(got, "\a") {
+		t.Fatalf("expected terminal controls to be escaped, got %q", got)
+	}
+	if !strings.Contains(got, `\x1b]52;c;bad\x07`) {
+		t.Fatalf("expected OSC controls to be escaped, got %q", got)
+	}
+}
+
+func TestPrintMemoryJSONDoesNotSanitizeText(t *testing.T) {
+	memory := domain.Memory{ID: 4, Text: "raw\x1b[2J", UpdatedAt: time.Unix(0, 0).UTC()}
+	buf := new(bytes.Buffer)
+
+	if err := PrintMemoryJSON(buf, memory); err != nil {
+		t.Fatalf("print json: %v", err)
+	}
+	if !strings.Contains(buf.String(), `raw\u001b[2J`) {
+		t.Fatalf("expected JSON encoding to preserve raw text semantics, got %q", buf.String())
+	}
+}

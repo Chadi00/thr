@@ -17,6 +17,26 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+confirm() {
+  local prompt="$1"
+  local reply
+
+  if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+    return 1
+  fi
+
+  printf '%s [y/N] ' "$prompt" >&3
+  IFS= read -r reply <&3 || {
+    exec 3>&-
+    return 1
+  }
+  exec 3>&-
+  case "$reply" in
+    y | Y | yes | YES | Yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ensure_macos() {
   if [[ "$(uname -s)" == 'Darwin' ]]; then
     return 0
@@ -99,6 +119,10 @@ remove_data_dir() {
   local dir="$HOME/.thr"
 
   [[ -e "$dir" ]] || return 0
+  if ! confirm "Remove saved memories and model cache at ${dir}?"; then
+    log "Preserved ${dir}"
+    return 0
+  fi
   rm -rf "$dir"
   log "Removed ${dir}"
 }

@@ -6,15 +6,24 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Chadi00/thr/internal/domain"
 	"github.com/Chadi00/thr/internal/store"
 )
 
 type Stats struct {
-	DBPath     string `json:"db_path"`
-	ModelCache string `json:"model_cache"`
-	Memories   int64  `json:"memories"`
+	DBPath              string `json:"db_path"`
+	ModelCache          string `json:"model_cache"`
+	Memories            int64  `json:"memories"`
+	ModelID             string `json:"model_id"`
+	ModelRevision       string `json:"model_revision"`
+	ModelManifestSHA256 string `json:"model_manifest_sha256"`
+	ModelVerified       bool   `json:"model_verified"`
+	IndexedMemories     int64  `json:"indexed_memories"`
+	StaleMemories       int64  `json:"stale_memories"`
+	MissingEmbeddings   int64  `json:"missing_embeddings"`
 }
 
 func PrintMemoryAdded(w io.Writer, memory domain.Memory) {
@@ -40,7 +49,7 @@ func PrintMemoryListJSON(w io.Writer, memories []domain.Memory) error {
 }
 
 func PrintMemory(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, memory.UpdatedAt.Format(time.RFC3339), memory.Text)
+	fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, memory.UpdatedAt.Format(time.RFC3339), sanitizeText(memory.Text, true))
 }
 
 func PrintMemoryJSON(w io.Writer, memory domain.Memory) error {
@@ -94,6 +103,13 @@ func PrintStats(w io.Writer, stats Stats) {
 	fmt.Fprintf(w, "db_path\t%s\n", stats.DBPath)
 	fmt.Fprintf(w, "model_cache\t%s\n", stats.ModelCache)
 	fmt.Fprintf(w, "memories\t%d\n", stats.Memories)
+	fmt.Fprintf(w, "model_id\t%s\n", stats.ModelID)
+	fmt.Fprintf(w, "model_revision\t%s\n", stats.ModelRevision)
+	fmt.Fprintf(w, "model_manifest_sha256\t%s\n", stats.ModelManifestSHA256)
+	fmt.Fprintf(w, "model_verified\t%t\n", stats.ModelVerified)
+	fmt.Fprintf(w, "indexed_memories\t%d\n", stats.IndexedMemories)
+	fmt.Fprintf(w, "stale_memories\t%d\n", stats.StaleMemories)
+	fmt.Fprintf(w, "missing_embeddings\t%d\n", stats.MissingEmbeddings)
 }
 
 func PrintStatsJSON(w io.Writer, stats Stats) error {
@@ -107,20 +123,44 @@ func encodeJSON(w io.Writer, value any) error {
 }
 
 func truncate(value string, max int) string {
-	if len(value) <= max {
+	if utf8.RuneCountInString(value) <= max {
 		return value
 	}
 	if max <= 3 {
-		return value[:max]
+		return string([]rune(value)[:max])
 	}
-	return strings.TrimSpace(value[:max-3]) + "..."
+	return strings.TrimSpace(string([]rune(value)[:max-3])) + "..."
 }
 
 func inlineText(value string) string {
-	replacer := strings.NewReplacer(
-		"\r", "\\r",
-		"\n", "\\n",
-		"\t", "\\t",
-	)
-	return replacer.Replace(value)
+	return sanitizeText(value, false)
+}
+
+func sanitizeText(value string, allowNewline bool) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r == '\n' && allowNewline:
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r >= 0x80 && r <= 0x9f:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r):
+			if r <= 0xffff {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			} else {
+				fmt.Fprintf(&b, `\U%08x`, r)
+			}
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
