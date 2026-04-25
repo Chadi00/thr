@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bas
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
 ```
 
-The uninstaller removes the binary and PATH snippet, then asks before deleting saved memories and the model cache. If it cannot ask, it preserves `~/.thr`.
+The uninstaller removes the binary and PATH snippet, then asks separately before deleting saved memories or the cached embedding model. If it cannot ask, it preserves both.
 
 ---
 

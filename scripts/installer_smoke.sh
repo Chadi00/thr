@@ -170,14 +170,16 @@ main() {
   [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the Homebrew bin dir'
   assert_path_block_present
   assert_thr_usable
-  mkdir -p "$HOME/.thr"
+  mkdir -p "$HOME/.thr/models"
   : >"$HOME/.thr/thr.db"
+  : >"$HOME/.thr/models/model"
 
   log 'Running uninstall smoke test'
   bash "$ROOT_DIR/uninstall.sh"
 
   [[ ! -e "$install_dir/thr" ]] || fail 'uninstall left thr behind'
   [[ -e "$HOME/.thr/thr.db" ]] || fail 'uninstall removed data without confirmation'
+  [[ -e "$HOME/.thr/models/model" ]] || fail 'uninstall removed model cache without confirmation'
   assert_path_block_removed
 }
 

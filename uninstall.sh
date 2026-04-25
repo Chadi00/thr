@@ -115,16 +115,49 @@ remove_install_path_lines() {
   done
 }
 
-remove_data_dir() {
+remove_memory_store() {
   local dir="$HOME/.thr"
+  local removed=0
 
   [[ -e "$dir" ]] || return 0
-  if ! confirm "Remove saved memories and model cache at ${dir}?"; then
-    log "Preserved ${dir}"
+  if ! confirm "Remove saved memories at ${dir}?"; then
+    log "Preserved saved memories at ${dir}"
     return 0
   fi
+
+  for path in "$dir/thr.db" "$dir/thr.db-wal" "$dir/thr.db-shm"; do
+    if [[ -e "$path" ]]; then
+      rm -f "$path"
+      removed=1
+    fi
+  done
+
+  if [[ "$removed" -eq 1 ]]; then
+    log "Removed saved memories from ${dir}"
+  else
+    log "No saved memories found at ${dir}"
+  fi
+}
+
+remove_model_cache() {
+  local dir="$HOME/.thr/models"
+
+  [[ -e "$dir" ]] || return 0
+  if ! confirm "Remove cached embedding model at ${dir}?"; then
+    log "Preserved cached embedding model at ${dir}"
+    return 0
+  fi
+
   rm -rf "$dir"
-  log "Removed ${dir}"
+  log "Removed cached embedding model at ${dir}"
+}
+
+remove_empty_thr_home() {
+  local dir="$HOME/.thr"
+
+  [[ -d "$dir" ]] || return 0
+  rmdir "$dir" 2>/dev/null || return 0
+  log "Removed empty ${dir}"
 }
 
 main() {
@@ -135,7 +168,9 @@ main() {
   log "Removing install PATH snippets (if any)..."
   remove_install_path_lines
 
-  remove_data_dir
+  remove_memory_store
+  remove_model_cache
+  remove_empty_thr_home
   log "Done."
   if need_cmd brew && brew list --versions onnxruntime >/dev/null 2>&1; then
     log "Homebrew onnxruntime was left installed. Remove it manually if you no longer need it: brew uninstall onnxruntime"
