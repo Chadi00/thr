@@ -224,7 +224,7 @@ ensure_dir_on_path() {
   strip_thr_path_blocks "$rc"
   {
     printf '\n%s\n' "$THR_PATH_MARKER"
-    printf 'export PATH="%s:$PATH"\n' "$dir"
+    printf "export PATH=\"%s:\\$PATH\"\n" "$dir"
   } >>"$rc"
 
   export PATH="$dir:$PATH"
