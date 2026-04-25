@@ -21,6 +21,18 @@ func TestVersionFlagMatchesVersionCommand(t *testing.T) {
 	}
 }
 
+func TestCompletionCommandIsDisabled(t *testing.T) {
+	helpOutput := runRootCommand(t, "--help")
+	if strings.Contains(helpOutput, "completion") {
+		t.Fatalf("expected help output to omit completion command, got %q", helpOutput)
+	}
+
+	err := executeRootCommand("completion")
+	if err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("expected completion command to be unavailable, got %v", err)
+	}
+}
+
 func TestStatsJSONOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "missing.db")
 	output := runRootCommand(t, "--db", dbPath, "--json", "stats")

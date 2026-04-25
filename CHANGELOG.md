@@ -5,12 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.12] - 2026-04-25
 
 ### Changed
 
 - Updated CLI help and docs so `thr` is treated as the command name rather than an expanded acronym.
 - Simplified the README quick start, uninstall wording, and release automation details.
+
+### Fixed
+
+- Disabled Cobra's built-in `completion` command so `thr completion` is no longer exposed.
 
 ## [0.1.11] - 2026-04-25
 

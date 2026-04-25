@@ -28,6 +28,7 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 		},
 	}
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to SQLite database (overrides THR_DB; default ~/.thr/thr.db)")
 	rootCmd.PersistentFlags().Bool("json", false, "Emit JSON output for read-oriented commands")
