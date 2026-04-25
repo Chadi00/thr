@@ -91,9 +91,3 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 See [CHANGELOG.md](CHANGELOG.md) for release notes by version.
 
 ---
-
-## Contributing
-
-Issues and pull requests are welcome. Include your OS and the exact command you ran if something breaks.
-
-**Maintainers:** publishing is tag-driven — push a semver tag and GitHub Actions builds CGO binaries and uploads them to a GitHub Release. Update [CHANGELOG.md](CHANGELOG.md) when you cut a release.
