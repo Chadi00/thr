@@ -40,7 +40,7 @@ thr ask "what are their CLI preferences?"
 thr search "cli docs"
 ```
 
-Full help: `thr --help` and `thr <command> --help`. Use `thr prefetch` to download the embedding model before the first slow `add` or `ask`.
+Full help: `thr --help` and `thr <command> --help`.
 
 **Scripts and agents:** add `--json` to `list`, `show`, `ask`, `search`, or `stats` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
 
