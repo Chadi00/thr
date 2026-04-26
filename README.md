@@ -21,6 +21,8 @@ Requires macOS with [Homebrew](https://brew.sh) installed.
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
+The installer can optionally add the `thr` Agent Skill for Claude Code, OpenCode, or Codex so your coding agent knows when and how to use local memories.
+
 ### Uninstall
 
 ```bash
@@ -38,11 +40,26 @@ thr add "prefers small CLIs with good docs"
 thr list
 thr ask "what are their CLI preferences?"
 thr search "cli docs"
+thr list --last 4
 ```
 
 Full help: `thr --help` and `thr <command> --help`.
 
 **Scripts and agents:** add `--json` to `list`, `show`, `ask`, `search`, or `stats` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
+
+### Agent setup
+
+Install the `thr` Agent Skill for a supported coding agent:
+
+```bash
+thr setup claude-code
+thr setup opencode
+thr setup codex
+```
+
+The skill teaches agents to retrieve durable preferences and project facts with `thr ask` / `thr search`, save explicit non-sensitive memories with `thr add`, and maintain memories with `thr edit` / `thr forget`.
+
+Other agents that support Agent Skills can install the same [`skills/thr`](skills/thr) directory manually.
 
 ---
 
@@ -51,7 +68,7 @@ Full help: `thr --help` and `thr <command> --help`.
 | Command | Description |
 |---------|-------------|
 | `thr add <text>` · `thr add -` | Save a memory from text or stdin |
-| `thr list` | List memories (with ids) |
+| `thr list` | List memories (with ids); use `--last 4`, `--limit 4`, or `-n 4` to control the count |
 | `thr show <id>` | Print one memory |
 | `thr ask <question>` | Semantic search (meaning, not an LLM answer) |
 | `thr search <query>` | Text recall: FTS + substring + fuzzy / subsequence ranking (recent window) |
@@ -60,6 +77,7 @@ Full help: `thr --help` and `thr <command> --help`.
 | `thr index` | Rebuild missing or stale semantic search embeddings |
 | `thr stats` | Database path and count |
 | `thr prefetch` | Prepare the bundled embedding model cache |
+| `thr setup claude-code` / `opencode` / `codex` | Install the `thr` Agent Skill |
 | `thr version` | Build version (`-v` / `--version` also work) |
 
 **Globals:** `--db <path>` or `THR_DB` for the database. On read commands, `--json` emits stable JSON for scripts and agents. `ask` accepts `--max-distance` to tune semantic match strictness. `add` and `edit` accept `--max-bytes` to raise or lower the memory text size limit.

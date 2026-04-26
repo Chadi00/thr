@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2026-04-26
+
+### Added
+
+- `thr setup claude-code`, `thr setup opencode`, and `thr setup codex` install a managed Agent Skill that teaches coding agents how to use `thr` memories.
+- `thr list --last <count>` is now an explicit alias for listing the most recently saved memories, alongside the existing `--limit` / `-n` flags.
+- The macOS installer now optionally offers to install the `thr` skill for a coding agent, with manual guidance for other agents.
+
 ## [0.1.14] - 2026-04-26
 
 ### Changed

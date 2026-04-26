@@ -281,6 +281,93 @@ prefetch_model() {
   return 0
 }
 
+install_agent_skill() {
+  local target="$1"
+
+  if "$THR_INSTALLED_BIN" setup "$target"; then
+    return 0
+  fi
+
+  warn "Could not install the thr skill for ${target}. You can retry later with: thr setup ${target}"
+  return 0
+}
+
+print_other_skill_guidance() {
+  log "Install the thr skill manually from:"
+  log "https://github.com/${REPO_SLUG}/tree/master/skills/thr"
+}
+
+offer_agent_skill_setup() {
+  local reply choice
+
+  if [[ "${THR_INSTALL_SKIP_SKILL_PROMPT:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+    return 0
+  fi
+
+  printf 'Install the thr skill for a coding agent? [y/N] ' >&3
+  if ! IFS= read -r reply <&3; then
+    exec 3>&-
+    return 0
+  fi
+  case "$reply" in
+    y | Y | yes | YES | Yes) ;;
+    *)
+      exec 3>&-
+      return 0
+      ;;
+  esac
+
+  while true; do
+    {
+      printf '\nSelect one coding agent:\n'
+      printf '  1) Claude Code\n'
+      printf '  2) OpenCode\n'
+      printf '  3) Codex\n'
+      printf '  4) Other\n'
+      printf 'Choice [1-4, q to skip]: '
+    } >&3
+
+    if ! IFS= read -r choice <&3; then
+      exec 3>&-
+      return 0
+    fi
+
+    case "$choice" in
+      1 | c | C | claude | Claude | claude-code | Claude-Code | "Claude Code")
+        exec 3>&-
+        install_agent_skill "claude-code"
+        return 0
+        ;;
+      2 | o | O | opencode | OpenCode)
+        exec 3>&-
+        install_agent_skill "opencode"
+        return 0
+        ;;
+      3 | codex | Codex)
+        exec 3>&-
+        install_agent_skill "codex"
+        return 0
+        ;;
+      4 | other | Other)
+        exec 3>&-
+        print_other_skill_guidance
+        return 0
+        ;;
+      q | Q | quit | Quit | "")
+        exec 3>&-
+        return 0
+        ;;
+      *)
+        printf 'Please enter 1, 2, 3, 4, or q.\n' >&3
+        ;;
+    esac
+  done
+}
+
 main() {
   ensure_macos
   ensure_homebrew
@@ -289,6 +376,7 @@ main() {
   ensure_onnxruntime
   install_binary
   prefetch_model
+  offer_agent_skill_setup
 
   log "Ready: ${THR_INSTALLED_BIN}"
   if [[ "$THR_UPDATED_SHELL_RC" -eq 1 ]]; then

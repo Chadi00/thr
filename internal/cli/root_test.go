@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,50 @@ func TestListOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 	}
 	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
 		t.Fatalf("expected list to leave missing db absent, stat err=%v", err)
+	}
+}
+
+func TestListCountFlagsLimitNewestMemories(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatalf("open db: %v", err)
+	}
+
+	base := time.Now().UTC().UnixMilli()
+	for i := 1; i <= 5; i++ {
+		if _, err := db.Exec(
+			`INSERT INTO memories (text, created_at, updated_at) VALUES (?, ?, ?)`,
+			fmt.Sprintf("memory %d", i),
+			base+int64(i),
+			base+int64(i),
+		); err != nil {
+			_ = db.Close()
+			t.Fatalf("insert memory %d: %v", i, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	tests := [][]string{
+		{"list", "--last", "4"},
+		{"list", "--limit", "4"},
+		{"list", "-n", "4"},
+	}
+	for _, args := range tests {
+		output := runRootCommand(t, append([]string{"--db", dbPath}, args...)...)
+		for _, want := range []string{"memory 5", "memory 4", "memory 3", "memory 2"} {
+			if !strings.Contains(output, want) {
+				t.Fatalf("expected %v output to include %q, got %q", args, want, output)
+			}
+		}
+		if strings.Contains(output, "memory 1") {
+			t.Fatalf("expected %v to omit oldest memory, got %q", args, output)
+		}
 	}
 }
 

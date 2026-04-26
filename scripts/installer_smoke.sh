@@ -141,6 +141,19 @@ assert_thr_usable() {
   zsh -c 'source "$HOME/.zshrc" && command -v thr >/dev/null && thr --help >/dev/null && thr prefetch >/dev/null'
 }
 
+assert_agent_skill_prompt_skipped() {
+  local path
+
+  for path in \
+    "$HOME/.claude/skills/thr/SKILL.md" \
+    "$HOME/.config/opencode/skills/thr/SKILL.md" \
+    "$HOME/.agents/skills/thr/SKILL.md"; do
+    if [[ -e "$path" ]]; then
+      fail "optional agent skill setup should be skipped in smoke test, but found $path"
+    fi
+  done
+}
+
 main() {
   local release_base_url install_dir
 
@@ -165,11 +178,12 @@ main() {
   fi
 
   log 'Running install smoke test'
-  THR_INSTALL_TEST_BASE_URL="$release_base_url" bash "$ROOT_DIR/install.sh"
+  THR_INSTALL_TEST_BASE_URL="$release_base_url" THR_INSTALL_SKIP_SKILL_PROMPT=1 bash "$ROOT_DIR/install.sh"
 
   [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the Homebrew bin dir'
   assert_path_block_present
   assert_thr_usable
+  assert_agent_skill_prompt_skipped
   mkdir -p "$HOME/.thr/models"
   : >"$HOME/.thr/thr.db"
   : >"$HOME/.thr/models/model"

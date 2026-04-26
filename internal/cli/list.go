@@ -39,6 +39,7 @@ func newListCommand(dbPath *string) *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&limit, "limit", "n", 100, "Maximum memories to list")
+	cmd.Flags().IntVar(&limit, "last", 100, "Alias for --limit; list the last N memories saved")
 
 	return cmd
 }
