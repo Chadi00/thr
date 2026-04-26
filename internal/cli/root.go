@@ -12,7 +12,7 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 	rootCmd := &cobra.Command{
 		Use:          "thr",
 		Short:        "Save and find local memories",
-		Long:         "Store local memories and retrieve them with keyword or semantic search (retrieval only, no LLM-generated answers).",
+		Long:         "Store local memories and retrieve them with keyword or semantic search.",
 		SilenceUsage: true,
 		Version:      versionString(version, commit, buildDate),
 		RunE: func(cmd *cobra.Command, args []string) error {
