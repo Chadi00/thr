@@ -59,7 +59,7 @@ Full help: `thr --help` and `thr <command> --help`.
 | `thr forget <id>` | Delete a memory |
 | `thr index` | Rebuild missing or stale semantic search embeddings |
 | `thr stats` | Database path and count |
-| `thr prefetch` | Cache the embedding model |
+| `thr prefetch` | Prepare the bundled embedding model cache |
 | `thr version` | Build version (`-v` / `--version` also work) |
 
 **Globals:** `--db <path>` or `THR_DB` for the database. On read commands, `--json` emits stable JSON for scripts and agents. `ask` accepts `--max-distance` to tune semantic match strictness. `add` and `edit` accept `--max-bytes` to raise or lower the memory text size limit.
@@ -75,7 +75,7 @@ Full help: `thr --help` and `thr <command> --help`.
 
 thr stores memories as local plaintext in SQLite and hardens the default data and model-cache paths with private filesystem permissions. It does not encrypt memories at rest.
 
-Semantic vectors use a pinned, SHA-256-verified [Qdrant/bge-base-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-base-en-v1.5-onnx-Q) model (768-d) with sqlite-vec. `thr ask` returns only matches within a default vector distance of `0.80`; pass `--max-distance 4` to restore closest-results behavior. If the active model changes in a future release, `thr index` rebuilds semantic embeddings while preserving saved memories. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
+Semantic vectors use a bundled, pinned, SHA-256-verified [Qdrant/bge-base-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-base-en-v1.5-onnx-Q) model (768-d) with sqlite-vec. `thr prefetch` prepares the local model cache from the installed `thr` binary, so no model files are downloaded during install or normal use. `thr ask` returns only matches within a default vector distance of `0.80`; pass `--max-distance 4` to restore closest-results behavior. If the active model changes in a future release, `thr index` rebuilds semantic embeddings while preserving saved memories. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
 
 Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
 

@@ -3,12 +3,13 @@ package embed
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"net/http"
-	"net/http/httptest"
+	"errors"
+	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
+	"sort"
 	"testing"
+	"testing/fstest"
 )
 
 func TestBGEEmbedderReturnsErrorAfterClose(t *testing.T) {
@@ -24,34 +25,23 @@ func TestBGEEmbedderReturnsErrorAfterClose(t *testing.T) {
 	}
 }
 
-func TestEnsureVerifiedActiveModelDownloadsAndReusesCache(t *testing.T) {
-	files := map[string]string{
+func TestEnsureVerifiedActiveModelPreparesAndReusesCache(t *testing.T) {
+	modelFiles := map[string]string{
 		"config.json":          `{"ok":true}`,
 		"tokenizer.json":       `{"tokens":[]}`,
 		"model_optimized.onnx": "onnx",
 	}
-	withTestManifest(t, files)
-
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		name := path.Base(r.URL.Path)
-		value, ok := files[name]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(value))
-	}))
-	defer server.Close()
-	activeModelBaseURL = server.URL
+	assetFiles := map[string]string{
+		"config.json":                   `{"ok":true}`,
+		"tokenizer.json":                `{"tokens":[]}`,
+		"model_optimized.onnx.part-001": "nx",
+		"model_optimized.onnx.part-000": "on",
+	}
+	withTestModelAssets(t, modelFiles, assetFiles)
 
 	cacheDir := t.TempDir()
 	if err := EnsureVerifiedActiveModel(cacheDir, false); err != nil {
 		t.Fatalf("ensure model: %v", err)
-	}
-	if got := requests; got != len(files) {
-		t.Fatalf("expected %d downloads, got %d", len(files), got)
 	}
 	status := ActiveModelStatus(cacheDir)
 	if !status.Verified {
@@ -59,48 +49,74 @@ func TestEnsureVerifiedActiveModelDownloadsAndReusesCache(t *testing.T) {
 	}
 	assertModeEmbed(t, filepath.Join(cacheDir, modelCacheName), 0o700)
 	assertModeEmbed(t, filepath.Join(cacheDir, modelCacheName, "config.json"), 0o600)
+	gotONNX, err := os.ReadFile(filepath.Join(cacheDir, modelCacheName, "model_optimized.onnx"))
+	if err != nil {
+		t.Fatalf("read assembled onnx: %v", err)
+	}
+	if string(gotONNX) != "onnx" {
+		t.Fatalf("unexpected assembled onnx content: %q", string(gotONNX))
+	}
 
+	activeModelAssets = modelAssetSource{filesystem: failingFS{}}
 	if err := EnsureVerifiedActiveModel(cacheDir, false); err != nil {
 		t.Fatalf("ensure cached model: %v", err)
-	}
-	if got := requests; got != len(files) {
-		t.Fatalf("expected cached model reuse without downloads, got %d requests", got)
 	}
 }
 
 func TestEnsureVerifiedActiveModelRejectsDigestMismatch(t *testing.T) {
-	files := map[string]string{"config.json": "expected"}
-	withTestManifest(t, files)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("tampered"))
-	}))
-	defer server.Close()
-	activeModelBaseURL = server.URL
+	modelFiles := map[string]string{"config.json": "expected"}
+	assetFiles := map[string]string{"config.json": "tampered"}
+	withTestModelAssets(t, modelFiles, assetFiles)
 
 	cacheDir := t.TempDir()
 	if err := EnsureVerifiedActiveModel(cacheDir, false); err == nil {
 		t.Fatal("expected digest mismatch")
 	}
 	if _, err := os.Stat(filepath.Join(cacheDir, modelCacheName)); !os.IsNotExist(err) {
-		t.Fatalf("expected failed download to clean cache dir, stat err=%v", err)
+		t.Fatalf("expected failed prepare to clean cache dir, stat err=%v", err)
 	}
 }
 
-func withTestManifest(t *testing.T, files map[string]string) {
+func TestBundledActiveModelAssetsMatchManifest(t *testing.T) {
+	dir := t.TempDir()
+	for _, file := range activeModelFiles {
+		if err := writeBundledModelFile(activeModelAssets, file, filepath.Join(dir, file.Name)); err != nil {
+			t.Fatalf("write bundled model file %s: %v", file.Name, err)
+		}
+	}
+}
+
+func withTestModelAssets(t *testing.T, modelFiles map[string]string, assetFiles map[string]string) {
 	t.Helper()
 
 	originalFiles := activeModelFiles
-	originalBaseURL := activeModelBaseURL
-	activeModelFiles = make([]modelFile, 0, len(files))
-	for name, value := range files {
+	originalAssets := activeModelAssets
+	activeModelFiles = make([]modelFile, 0, len(modelFiles))
+	names := make([]string, 0, len(modelFiles))
+	for name := range modelFiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		value := modelFiles[name]
 		sum := sha256.Sum256([]byte(value))
 		activeModelFiles = append(activeModelFiles, modelFile{Name: name, SHA256: hex.EncodeToString(sum[:])})
 	}
+	assetMap := fstest.MapFS{}
+	for name, value := range assetFiles {
+		assetMap[name] = &fstest.MapFile{Data: []byte(value), Mode: 0o444}
+	}
+	activeModelAssets = modelAssetSource{filesystem: assetMap}
 	t.Cleanup(func() {
 		activeModelFiles = originalFiles
-		activeModelBaseURL = originalBaseURL
+		activeModelAssets = originalAssets
 	})
+}
+
+type failingFS struct{}
+
+func (failingFS) Open(name string) (fs.File, error) {
+	return nil, errors.New("unexpected embedded model asset access")
 }
 
 func assertModeEmbed(t *testing.T, path string, want os.FileMode) {

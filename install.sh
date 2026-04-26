@@ -271,13 +271,13 @@ install_binary() {
 }
 
 prefetch_model() {
-  log "Caching the embedding model..."
+  log "Preparing the bundled embedding model..."
   if "$THR_INSTALLED_BIN" prefetch; then
     log "Embedding model is ready."
     return 0
   fi
 
-  warn "Could not run thr prefetch. The model will download on the first add, ask, or edit."
+  warn "Could not run thr prefetch. The bundled model will be prepared on the first add, ask, or edit."
   return 0
 }
 

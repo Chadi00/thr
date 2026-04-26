@@ -9,8 +9,8 @@ import (
 func newPrefetchCommand(dbPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "prefetch",
-		Short: "Download the embedding model into the local cache",
-		Long: `Initializes the BGE embedding model (BAAI/bge-base-en-v1.5) in ~/.thr/models by default.
+		Short: "Prepare the bundled embedding model in the local cache",
+		Long: `Initializes the bundled BGE embedding model (BAAI/bge-base-en-v1.5) in ~/.thr/models by default.
 The install script runs this after building so the first add or ask is not slow.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			deps, cleanup, err := initPrefetchRuntime(*dbPath, true)

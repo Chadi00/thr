@@ -2,20 +2,26 @@ package embed
 
 import (
 	"crypto/sha256"
+	stdembed "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Chadi00/thr/internal/privacy"
 	fastembed "github.com/bdombro/fastembed-go"
 )
+
+//go:embed model_assets/*
+var embeddedModelAssets stdembed.FS
 
 const (
 	ActiveModelID        = "Qdrant/bge-base-en-v1.5-onnx-Q"
@@ -51,19 +57,24 @@ var activeModelFiles = []modelFile{
 	{Name: "vocab.txt", SHA256: "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"},
 }
 
-var activeModelBaseURL = "https://huggingface.co"
+type modelAssetSource struct {
+	filesystem fs.FS
+	root       string
+}
+
+var activeModelAssets = modelAssetSource{filesystem: embeddedModelAssets, root: "model_assets"}
 
 type BGEEmbedder struct {
 	model *fastembed.FlagEmbedding
 	mu    sync.Mutex
 }
 
-func NewBGEEmbedder(cacheDir string, showDownloadProgress bool) (*BGEEmbedder, error) {
-	if err := EnsureVerifiedActiveModel(cacheDir, showDownloadProgress); err != nil {
+func NewBGEEmbedder(cacheDir string, showPrepareProgress bool) (*BGEEmbedder, error) {
+	if err := EnsureVerifiedActiveModel(cacheDir, showPrepareProgress); err != nil {
 		return nil, err
 	}
 
-	showProgress := showDownloadProgress
+	showProgress := showPrepareProgress
 	options := fastembed.InitOptions{
 		Model:                fastembed.BGEBaseENV15,
 		CacheDir:             cacheDir,
@@ -96,7 +107,7 @@ func ActiveModelStatus(cacheDir string) ModelStatus {
 	}
 }
 
-func EnsureVerifiedActiveModel(cacheDir string, showDownloadProgress bool) error {
+func EnsureVerifiedActiveModel(cacheDir string, showPrepareProgress bool) error {
 	if err := privacy.EnsurePrivateDir(cacheDir); err != nil {
 		return err
 	}
@@ -109,7 +120,7 @@ func EnsureVerifiedActiveModel(cacheDir string, showDownloadProgress bool) error
 	if err := os.RemoveAll(destDir); err != nil {
 		return fmt.Errorf("remove unverified model cache: %w", err)
 	}
-	if err := downloadActiveModel(cacheDir, showDownloadProgress); err != nil {
+	if err := prepareActiveModel(cacheDir, showPrepareProgress); err != nil {
 		return err
 	}
 	return privacy.HardenTreeIfExists(cacheDir)
@@ -158,7 +169,7 @@ func verifyModelDir(dir string) error {
 	return nil
 }
 
-func downloadActiveModel(cacheDir string, showDownloadProgress bool) error {
+func prepareActiveModel(cacheDir string, showPrepareProgress bool) error {
 	destDir := activeModelDir(cacheDir)
 	partDir := destDir + ".partial"
 	_ = os.RemoveAll(partDir)
@@ -174,10 +185,10 @@ func downloadActiveModel(cacheDir string, showDownloadProgress bool) error {
 	}()
 
 	for _, file := range activeModelFiles {
-		if showDownloadProgress {
-			fmt.Fprintf(os.Stderr, "Downloading %s...\n", file.Name)
+		if showPrepareProgress {
+			fmt.Fprintf(os.Stderr, "Preparing %s...\n", file.Name)
 		}
-		if err := downloadAndVerify(file, filepath.Join(partDir, file.Name)); err != nil {
+		if err := writeBundledModelFile(activeModelAssets, file, filepath.Join(partDir, file.Name)); err != nil {
 			return err
 		}
 	}
@@ -196,29 +207,13 @@ func downloadActiveModel(cacheDir string, showDownloadProgress bool) error {
 	return nil
 }
 
-func downloadAndVerify(file modelFile, path string) error {
-	url := fmt.Sprintf("%s/%s/resolve/%s/%s", activeModelBaseURL, ActiveModelID, ActiveModelRevision, file.Name)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "thr (https://github.com/Chadi00/thr)")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", file.Name, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("download %s: %s", file.Name, resp.Status)
-	}
-
+func writeBundledModelFile(source modelAssetSource, file modelFile, path string) error {
 	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, privacy.PrivateFileMode)
 	if err != nil {
 		return fmt.Errorf("create model file %s: %w", file.Name, err)
 	}
 	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(out, hash), resp.Body)
+	copyErr := copyBundledModelFile(source, file.Name, io.MultiWriter(out, hash))
 	closeErr := out.Close()
 	if copyErr != nil {
 		return fmt.Errorf("write model file %s: %w", file.Name, copyErr)
@@ -230,6 +225,71 @@ func downloadAndVerify(file modelFile, path string) error {
 		return fmt.Errorf("verify model file %s: digest mismatch", file.Name)
 	}
 	return nil
+}
+
+func copyBundledModelFile(source modelAssetSource, name string, writer io.Writer) error {
+	if name == "model_optimized.onnx" {
+		chunks, err := source.chunkNames(name)
+		if err != nil {
+			return err
+		}
+		for _, chunk := range chunks {
+			if err := copyBundledAsset(source, chunk, writer); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return copyBundledAsset(source, name, writer)
+}
+
+func copyBundledAsset(source modelAssetSource, name string, writer io.Writer) error {
+	file, err := source.open(name)
+	if err != nil {
+		return fmt.Errorf("open embedded model asset %s: %w", name, err)
+	}
+	defer file.Close()
+	_, err = io.Copy(writer, file)
+	return err
+}
+
+func (s modelAssetSource) open(name string) (fs.File, error) {
+	return s.filesystem.Open(s.assetPath(name))
+}
+
+func (s modelAssetSource) chunkNames(name string) ([]string, error) {
+	entries, err := fs.ReadDir(s.filesystem, s.dir())
+	if err != nil {
+		return nil, fmt.Errorf("read embedded model assets: %w", err)
+	}
+
+	prefix := name + ".part-"
+	chunks := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		chunks = append(chunks, entry.Name())
+	}
+	sort.Strings(chunks)
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no embedded chunks found for %s", name)
+	}
+	return chunks, nil
+}
+
+func (s modelAssetSource) assetPath(name string) string {
+	if s.root == "" {
+		return name
+	}
+	return path.Join(s.root, name)
+}
+
+func (s modelAssetSource) dir() string {
+	if s.root == "" {
+		return "."
+	}
+	return s.root
 }
 
 func fileSHA256(path string) (string, error) {
