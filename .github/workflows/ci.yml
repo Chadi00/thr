@@ -23,12 +23,15 @@ jobs:
           go-version-file: go.mod
 
       - name: Verify shell scripts parse
-        run: bash -n install.sh uninstall.sh scripts/installer_smoke.sh scripts/update_model_assets.sh
+        run: bash -n install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/update_model_assets.sh
 
       - name: Run shellcheck
         run: |
           brew list --versions shellcheck >/dev/null 2>&1 || brew install shellcheck
-          shellcheck install.sh uninstall.sh scripts/installer_smoke.sh scripts/update_model_assets.sh
+          shellcheck install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/update_model_assets.sh
+
+      - name: Run installer prompt tests
+        run: bash scripts/installer_prompt_test.sh
 
       - name: Run Go tests
         run: go test ./...

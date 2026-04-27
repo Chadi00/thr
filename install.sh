@@ -11,6 +11,7 @@ THR_MINISIGN_PUBLIC_KEY="RWQrobAhNMKgHfSWqGw98XeinTX0kLJe5W2Fc0t/fpM2XOTvryUOUpu
 THR_TMPDIR=""
 THR_INSTALLED_BIN=""
 THR_UPDATED_SHELL_RC=0
+THR_AGENT_SKILL_NAMES=("Claude Code" "OpenCode" "Codex" "Other")
 
 log() {
   printf '[thr-install] %s\n' "$*"
@@ -297,8 +298,357 @@ print_other_skill_guidance() {
   log "https://github.com/${REPO_SLUG}/tree/master/skills/thr"
 }
 
+agent_skill_display_name() {
+  case "$1" in
+    claude-code) printf '%s' 'Claude Code' ;;
+    opencode) printf '%s' 'OpenCode' ;;
+    codex) printf '%s' 'Codex' ;;
+    other) printf '%s' 'Other' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+agent_skill_choice_target() {
+  case "$1" in
+    1 | c | cc | claude | claude-code | claudecode)
+      printf '%s' 'claude-code'
+      ;;
+    2 | o | opencode | open-code | open_code)
+      printf '%s' 'opencode'
+      ;;
+    3 | codex)
+      printf '%s' 'codex'
+      ;;
+    4 | other | manual)
+      printf '%s' 'other'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+agent_skill_targets_from_flags() {
+  local claude="$1"
+  local opencode="$2"
+  local codex="$3"
+  local other="$4"
+  local sep=""
+
+  if [[ "$claude" -eq 1 ]]; then
+    printf '%s%s' "$sep" 'claude-code'
+    sep=" "
+  fi
+  if [[ "$opencode" -eq 1 ]]; then
+    printf '%s%s' "$sep" 'opencode'
+    sep=" "
+  fi
+  if [[ "$codex" -eq 1 ]]; then
+    printf '%s%s' "$sep" 'codex'
+    sep=" "
+  fi
+  if [[ "$other" -eq 1 ]]; then
+    printf '%s%s' "$sep" 'other'
+  fi
+}
+
+parse_agent_skill_selection() {
+  local input="$1"
+  local normalized token target
+  local -a tokens=()
+  local i=0
+  local selected_claude=0
+  local selected_opencode=0
+  local selected_codex=0
+  local selected_other=0
+  local skip_requested=0
+
+  normalized="$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')"
+  normalized="${normalized//,/ }"
+  normalized="${normalized//;/ }"
+
+  if [[ -z "${normalized//[[:space:]]/}" ]]; then
+    return 1
+  fi
+
+  read -r -a tokens <<<"$normalized"
+  while [[ "$i" -lt "${#tokens[@]}" ]]; do
+    token="${tokens[$i]}"
+    if [[ "$token" == "claude" && $((i + 1)) -lt "${#tokens[@]}" && "${tokens[$((i + 1))]}" == "code" ]]; then
+      token="claude-code"
+      i=$((i + 1))
+    elif [[ "$token" == "open" && $((i + 1)) -lt "${#tokens[@]}" && "${tokens[$((i + 1))]}" == "code" ]]; then
+      token="opencode"
+      i=$((i + 1))
+    fi
+
+    case "$token" in
+      q | quit | skip | none | no)
+        skip_requested=1
+        i=$((i + 1))
+        continue
+        ;;
+    esac
+
+    if ! target="$(agent_skill_choice_target "$token")"; then
+      return 2
+    fi
+
+    case "$target" in
+      claude-code) selected_claude=1 ;;
+      opencode) selected_opencode=1 ;;
+      codex) selected_codex=1 ;;
+      other) selected_other=1 ;;
+    esac
+    i=$((i + 1))
+  done
+
+  if [[ "$skip_requested" -eq 1 ]]; then
+    if [[ "$selected_claude" -eq 1 || "$selected_opencode" -eq 1 || "$selected_codex" -eq 1 || "$selected_other" -eq 1 ]]; then
+      return 2
+    fi
+    return 1
+  fi
+
+  agent_skill_targets_from_flags "$selected_claude" "$selected_opencode" "$selected_codex" "$selected_other"
+}
+
+agent_skill_confirmation_reply_is_yes() {
+  case "$1" in
+    y | Y | yes | YES | Yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+confirm_agent_skill_targets() {
+  local targets="$1"
+  local target reply
+
+  printf '\nSelected coding agents:\n' >&3
+  for target in $targets; do
+    printf '  - %s\n' "$(agent_skill_display_name "$target")" >&3
+  done
+  printf 'Install thr skill for these selections? [y/N] ' >&3
+
+  if ! IFS= read -r reply <&3; then
+    return 1
+  fi
+
+  if agent_skill_confirmation_reply_is_yes "$reply"; then
+    return 0
+  fi
+
+  printf 'Skipped coding agent skill setup.\n' >&3
+  return 1
+}
+
+agent_skill_selector_supported() {
+  [[ -t 3 ]] || return 1
+  [[ -n "${TERM:-}" && "${TERM:-}" != "dumb" ]] || return 1
+}
+
+render_agent_skill_selector() {
+  local cursor="$1"
+  local selected_claude="$2"
+  local selected_opencode="$3"
+  local selected_codex="$4"
+  local selected_other="$5"
+  local i marker checked selected
+
+  printf '\033[2K\rSelect coding agents. Space toggles, Enter reviews, q skips.\n' >&3
+  for i in 0 1 2 3; do
+    selected=0
+    case "$i" in
+      0) selected="$selected_claude" ;;
+      1) selected="$selected_opencode" ;;
+      2) selected="$selected_codex" ;;
+      3) selected="$selected_other" ;;
+    esac
+
+    marker=" "
+    if [[ "$i" -eq "$cursor" ]]; then
+      marker=">"
+    fi
+
+    checked=" "
+    if [[ "$selected" -eq 1 ]]; then
+      checked="x"
+    fi
+
+    printf '\033[2K\r  %s [%s] %s\n' "$marker" "$checked" "${THR_AGENT_SKILL_NAMES[$i]}" >&3
+  done
+  printf '\033[2K\rUse arrow keys or j/k to move.\n' >&3
+}
+
+read_agent_skill_selector_key() {
+  local key rest
+
+  if ! IFS= read -rsn1 key <&3; then
+    return 1
+  fi
+
+  case "$key" in
+    $'\033')
+      if IFS= read -rsn2 -t 1 rest <&3; then
+        case "$rest" in
+          '[A') printf '%s' 'up' ;;
+          '[B') printf '%s' 'down' ;;
+          *) printf '%s' 'escape' ;;
+        esac
+      else
+        printf '%s' 'escape'
+      fi
+      ;;
+    "")
+      printf '%s' 'enter'
+      ;;
+    " ")
+      printf '%s' 'space'
+      ;;
+    j | J)
+      printf '%s' 'down'
+      ;;
+    k | K)
+      printf '%s' 'up'
+      ;;
+    q | Q)
+      printf '%s' 'quit'
+      ;;
+    *)
+      printf '%s' 'other'
+      ;;
+  esac
+}
+
+toggle_agent_skill_selection() {
+  case "$1" in
+    0)
+      if [[ "$selected_claude" -eq 1 ]]; then selected_claude=0; else selected_claude=1; fi
+      ;;
+    1)
+      if [[ "$selected_opencode" -eq 1 ]]; then selected_opencode=0; else selected_opencode=1; fi
+      ;;
+    2)
+      if [[ "$selected_codex" -eq 1 ]]; then selected_codex=0; else selected_codex=1; fi
+      ;;
+    3)
+      if [[ "$selected_other" -eq 1 ]]; then selected_other=0; else selected_other=1; fi
+      ;;
+  esac
+}
+
+select_agent_skills_interactive() {
+  local cursor=0
+  local selected_claude=0
+  local selected_opencode=0
+  local selected_codex=0
+  local selected_other=0
+  local key targets
+  local selector_lines=6
+  local rendered=0
+
+  if ! agent_skill_selector_supported; then
+    return 2
+  fi
+
+  printf '\n' >&3
+  while true; do
+    if [[ "$rendered" -eq 1 ]]; then
+      printf '\033[%dA' "$selector_lines" >&3
+    fi
+    render_agent_skill_selector "$cursor" "$selected_claude" "$selected_opencode" "$selected_codex" "$selected_other"
+    rendered=1
+
+    if ! key="$(read_agent_skill_selector_key)"; then
+      printf '\nSkipped coding agent skill setup.\n' >&3
+      return 1
+    fi
+
+    case "$key" in
+      up)
+        if [[ "$cursor" -eq 0 ]]; then cursor=3; else cursor=$((cursor - 1)); fi
+        ;;
+      down)
+        if [[ "$cursor" -eq 3 ]]; then cursor=0; else cursor=$((cursor + 1)); fi
+        ;;
+      space)
+        toggle_agent_skill_selection "$cursor"
+        ;;
+      enter)
+        targets="$(agent_skill_targets_from_flags "$selected_claude" "$selected_opencode" "$selected_codex" "$selected_other")"
+        if [[ -z "$targets" ]]; then
+          printf '\nNo coding agents selected; skipping skill setup.\n' >&3
+          return 1
+        fi
+
+        if confirm_agent_skill_targets "$targets"; then
+          printf '%s\n' "$targets"
+          return 0
+        fi
+        return 1
+        ;;
+      quit | escape)
+        printf '\nSkipped coding agent skill setup.\n' >&3
+        return 1
+        ;;
+    esac
+  done
+}
+
+select_agent_skills_fallback() {
+  local input targets parse_status
+
+  printf '\nTerminal does not support the interactive selector.\n' >&3
+  while true; do
+    printf 'Enter coding agents to install (claude-code, opencode, codex, other; comma/space separated; blank to skip): ' >&3
+    if ! IFS= read -r input <&3; then
+      return 1
+    fi
+
+    if targets="$(parse_agent_skill_selection "$input")"; then
+      if confirm_agent_skill_targets "$targets"; then
+        printf '%s\n' "$targets"
+        return 0
+      fi
+      return 1
+    else
+      parse_status="$?"
+    fi
+
+    case "$parse_status" in
+      1)
+        printf 'Skipped coding agent skill setup.\n' >&3
+        return 1
+        ;;
+      *)
+        printf 'Please enter one or more of: claude-code, opencode, codex, other; or q to skip.\n' >&3
+        ;;
+    esac
+  done
+}
+
+install_selected_agent_skills() {
+  local targets="$1"
+  local target install_other=0
+
+  for target in $targets; do
+    case "$target" in
+      other)
+        install_other=1
+        ;;
+      *)
+        install_agent_skill "$target"
+        ;;
+    esac
+  done
+
+  if [[ "$install_other" -eq 1 ]]; then
+    print_other_skill_guidance
+  fi
+}
+
 offer_agent_skill_setup() {
-  local reply choice
+  local reply selected_targets selection_status
 
   if [[ "${THR_INSTALL_SKIP_SKILL_PROMPT:-0}" == "1" ]]; then
     return 0
@@ -321,51 +671,22 @@ offer_agent_skill_setup() {
       ;;
   esac
 
-  while true; do
-    {
-      printf '\nSelect one coding agent:\n'
-      printf '  1) Claude Code\n'
-      printf '  2) OpenCode\n'
-      printf '  3) Codex\n'
-      printf '  4) Other\n'
-      printf 'Choice [1-4, q to skip]: '
-    } >&3
+  if selected_targets="$(select_agent_skills_interactive)"; then
+    exec 3>&-
+    install_selected_agent_skills "$selected_targets"
+    return 0
+  else
+    selection_status="$?"
+  fi
 
-    if ! IFS= read -r choice <&3; then
-      exec 3>&-
-      return 0
-    fi
+  if [[ "$selection_status" -eq 2 ]] && selected_targets="$(select_agent_skills_fallback)"; then
+    exec 3>&-
+    install_selected_agent_skills "$selected_targets"
+    return 0
+  fi
 
-    case "$choice" in
-      1 | c | C | claude | Claude | claude-code | Claude-Code | "Claude Code")
-        exec 3>&-
-        install_agent_skill "claude-code"
-        return 0
-        ;;
-      2 | o | O | opencode | OpenCode)
-        exec 3>&-
-        install_agent_skill "opencode"
-        return 0
-        ;;
-      3 | codex | Codex)
-        exec 3>&-
-        install_agent_skill "codex"
-        return 0
-        ;;
-      4 | other | Other)
-        exec 3>&-
-        print_other_skill_guidance
-        return 0
-        ;;
-      q | Q | quit | Quit | "")
-        exec 3>&-
-        return 0
-        ;;
-      *)
-        printf 'Please enter 1, 2, 3, 4, or q.\n' >&3
-        ;;
-    esac
-  done
+  exec 3>&-
+  return 0
 }
 
 main() {
@@ -385,4 +706,6 @@ main() {
   log "Verify: thr --help"
 }
 
-main "$@"
+if [[ "${THR_INSTALL_LIB_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
