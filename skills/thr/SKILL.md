@@ -1,6 +1,6 @@
 ---
 name: thr
-description: Use thr to retrieve and maintain durable local memories: user preferences, project facts, decisions, and recurring workflows.
+description: Use thr whenever the task involves durable memory in any way: retrieving information that may have been stored from previous sessions, or managing memories by storing, editing, deleting, or listing them. If the user asks a question that could plausibly be answered from memory, check thr first. If the user asks to remember, update, remove, or review stored information, use thr to manage it.
 ---
 
 <!-- thr:managed-skill:v1 -->

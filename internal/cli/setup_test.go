@@ -47,7 +47,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 			content := readFileString(t, path)
 			for _, want := range []string{
 				"name: thr",
-				"description: Use thr to retrieve and maintain durable local memories",
+				"description: Use thr whenever the task involves durable memory in any way",
 				thrSkillManagedMarker,
 				"thr ask --json",
 				"thr search --json",
