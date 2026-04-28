@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "onnxruntime_version": "1.25.1",
+  "runtime_policy": {
+    "execution_provider": "CPU",
+    "library_env_override": "THR_ONNXRUNTIME_LIB",
+    "notes": "Release archives are self-contained. Prefer official ONNX Runtime CPU assets where available; CI builds only targets that upstream no longer publishes."
+  },
+  "targets": [
+    {
+      "target": "darwin-arm64",
+      "status": "shipping",
+      "source": "official-release-asset",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.25.1/onnxruntime-osx-arm64-1.25.1.tgz",
+      "archive_sha256": "18987ec3187b5f29ba798109750f6135060560ad4e0a52678fcc753ee8fb3091",
+      "library_path": "lib/libonnxruntime.dylib",
+      "library_sha256": "8fb965cb044a02621f3f2980df40ca583e3e15f0bdbac0fa9e89b3300ef8a670",
+      "license_files": [
+        "LICENSE",
+        "ThirdPartyNotices.txt",
+        "Privacy.md"
+      ]
+    },
+    {
+      "target": "darwin-amd64",
+      "status": "shipping",
+      "source": "ci-source-build",
+      "source_repo": "https://github.com/microsoft/onnxruntime",
+      "source_tag": "v1.25.1",
+      "library_path": "build/MacOS/Release/libonnxruntime.dylib",
+      "license_files": [
+        "LICENSE",
+        "ThirdPartyNotices.txt",
+        "Privacy.md"
+      ]
+    },
+    {
+      "target": "linux-amd64",
+      "status": "future",
+      "source": "official-release-asset"
+    },
+    {
+      "target": "linux-arm64",
+      "status": "future",
+      "source": "official-release-asset"
+    },
+    {
+      "target": "windows-amd64",
+      "status": "future",
+      "source": "official-release-asset"
+    },
+    {
+      "target": "windows-arm64",
+      "status": "future",
+      "source": "official-release-asset"
+    }
+  ]
+}

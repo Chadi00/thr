@@ -2,13 +2,19 @@
 set -euo pipefail
 
 REPO_SLUG="Chadi00/thr"
-THR_PATH_MARKER="# thr install: add Homebrew bin to PATH (https://github.com/Chadi00/thr)"
+THR_PATH_MARKER="# thr install: add thr bin to PATH (https://github.com/Chadi00/thr)"
+THR_LEGACY_HOMEBREW_PATH_MARKER="# thr install: add Homebrew bin to PATH (https://github.com/Chadi00/thr)"
 THR_OLD_PATH_MARKER="# thr install: add thr bin dir to PATH (https://github.com/Chadi00/thr)"
 THR_OLD_GO_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
 THR_DOWNLOAD_BASE_URL="${THR_INSTALL_TEST_BASE_URL:-https://github.com/${REPO_SLUG}/releases/latest/download}"
-THR_MINISIGN_PUBLIC_KEY="RWQrobAhNMKgHfSWqGw98XeinTX0kLJe5W2Fc0t/fpM2XOTvryUOUpuM"
+THR_ONNXRUNTIME_VERSION="1.25.1"
+THR_SSH_SIGNING_NAMESPACE="thr-release"
+THR_SSH_SIGNING_IDENTITY="thr-release"
+# Release jobs must sign checksums.txt with the private key matching this allowed signer.
+THR_SSH_ALLOWED_SIGNERS="${THR_INSTALL_ALLOWED_SIGNERS:-thr-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAXr9HFt+bOkFt6Hx9xC5z/KpwBL0Y5RDonM1eqErPKl thr-release}"
 
 THR_TMPDIR=""
+THR_EXTRACT_DIR=""
 THR_INSTALLED_BIN=""
 THR_UPDATED_SHELL_RC=0
 THR_AGENT_SKILL_NAMES=("Claude Code" "OpenCode" "Codex" "Other")
@@ -62,43 +68,6 @@ ensure_macos() {
   return 1
 }
 
-ensure_homebrew() {
-  if need_cmd brew; then
-    return 0
-  fi
-
-  warn "Homebrew is required. Install it from https://brew.sh and re-run this command."
-  return 1
-}
-
-ensure_onnxruntime() {
-  if brew list --versions onnxruntime >/dev/null 2>&1; then
-    return 0
-  fi
-
-  if ! confirm "Install ONNX Runtime with Homebrew?"; then
-    warn "ONNX Runtime is required to run thr semantic search. Re-run install in a terminal and approve the prompt."
-    return 1
-  fi
-
-  log "Installing ONNX Runtime via Homebrew..."
-  brew install onnxruntime
-}
-
-ensure_minisign() {
-  if need_cmd minisign; then
-    return 0
-  fi
-
-  if ! confirm "Install minisign with Homebrew to verify the thr release?"; then
-    warn "minisign is required to verify thr release checksums."
-    return 1
-  fi
-
-  log "Installing minisign via Homebrew..."
-  brew install minisign
-}
-
 normalize_arch() {
   case "$(uname -m)" in
     arm64 | aarch64) printf '%s' 'arm64' ;;
@@ -118,35 +87,80 @@ sha256_file() {
   fi
 }
 
-download_release_binary() {
-  local arch archive expected actual
+verify_signed_checksums() {
+  local allowed_signers
 
-  if ! need_cmd curl || ! need_cmd tar || ! need_cmd minisign; then
-    warn "Install requires curl, tar, and minisign."
+  allowed_signers="${THR_TMPDIR}/allowed_signers"
+  printf '%s\n' "$THR_SSH_ALLOWED_SIGNERS" >"$allowed_signers"
+  if ! ssh-keygen -Y verify \
+    -f "$allowed_signers" \
+    -I "$THR_SSH_SIGNING_IDENTITY" \
+    -n "$THR_SSH_SIGNING_NAMESPACE" \
+    -s "${THR_TMPDIR}/checksums.txt.sig" \
+    <"${THR_TMPDIR}/checksums.txt" >/dev/null; then
+    warn "Could not verify signed release checksums."
     return 1
   fi
-  if [[ "$THR_MINISIGN_PUBLIC_KEY" == RWTODO_* && -z "${THR_INSTALL_TEST_BASE_URL:-}" ]]; then
-    warn "Release verification key is not configured."
+}
+
+validate_archive_layout() {
+  local archive="$1"
+  local arch="$2"
+  local entry has_bin=0 has_manifest=0 has_runtime=0
+  local runtime_lib="lib/thr/onnxruntime/${THR_ONNXRUNTIME_VERSION}/darwin-${arch}/libonnxruntime.dylib"
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      "" | /* | ./* | *"/../"* | "../"* | *"/.." | "..")
+        warn "Archive contains an unsafe path: ${entry}"
+        return 1
+        ;;
+      bin/thr)
+        has_bin=1
+        ;;
+      bin/ | lib/ | lib/thr/ | lib/thr/*/)
+        ;;
+      manifest.json)
+        has_manifest=1
+        ;;
+      "$runtime_lib")
+        has_runtime=1
+        ;;
+      lib/thr/*)
+        ;;
+      *)
+        warn "Archive contains an unexpected path: ${entry}"
+        return 1
+        ;;
+    esac
+  done < <(tar -tzf "$archive")
+
+  if [[ "$has_bin" -ne 1 || "$has_manifest" -ne 1 || "$has_runtime" -ne 1 ]]; then
+    warn "Archive is missing bin/thr, manifest.json, or the packaged ONNX Runtime library."
+    return 1
+  fi
+}
+
+download_release_archive() {
+  local arch archive expected actual
+
+  if ! need_cmd curl || ! need_cmd tar || ! need_cmd ssh-keygen; then
+    warn "Install requires curl, tar, and ssh-keygen."
     return 1
   fi
 
   arch="$(normalize_arch)" || return 1
   archive="thr_darwin_${arch}.tar.gz"
   THR_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
+  THR_EXTRACT_DIR="${THR_TMPDIR}/extract"
+  mkdir -p "$THR_EXTRACT_DIR"
 
   log "Downloading ${archive}..."
   curl -fsSL "${THR_DOWNLOAD_BASE_URL}/${archive}" -o "${THR_TMPDIR}/${archive}"
   curl -fsSL "${THR_DOWNLOAD_BASE_URL}/checksums.txt" -o "${THR_TMPDIR}/checksums.txt"
-  curl -fsSL "${THR_DOWNLOAD_BASE_URL}/checksums.txt.minisig" -o "${THR_TMPDIR}/checksums.txt.minisig"
+  curl -fsSL "${THR_DOWNLOAD_BASE_URL}/checksums.txt.sig" -o "${THR_TMPDIR}/checksums.txt.sig"
 
-  if [[ "$THR_MINISIGN_PUBLIC_KEY" == RWTODO_* && -n "${THR_INSTALL_TEST_BASE_URL:-}" ]]; then
-    warn "Skipping signature verification for installer test fixture because the release public key is not configured."
-  else
-    if ! minisign -Vm "${THR_TMPDIR}/checksums.txt" -x "${THR_TMPDIR}/checksums.txt.minisig" -P "$THR_MINISIGN_PUBLIC_KEY" >/dev/null; then
-      warn "Could not verify signed release checksums."
-      return 1
-    fi
-  fi
+  verify_signed_checksums
 
   expected="$(awk -v name="$archive" '$2 == name {print $1; exit}' "${THR_TMPDIR}/checksums.txt")"
   if [[ -z "$expected" ]]; then
@@ -160,19 +174,15 @@ download_release_binary() {
     return 1
   fi
 
-  if [[ "$(tar -tzf "${THR_TMPDIR}/${archive}")" != "thr" ]]; then
-    warn "Archive did not contain exactly the expected thr binary entry."
-    return 1
-  fi
+  validate_archive_layout "${THR_TMPDIR}/${archive}" "$arch"
 
-  tar -xzf "${THR_TMPDIR}/${archive}" -C "$THR_TMPDIR" thr
-  if [[ ! -f "${THR_TMPDIR}/thr" ]]; then
+  tar -xzf "${THR_TMPDIR}/${archive}" -C "$THR_EXTRACT_DIR"
+  if [[ ! -f "${THR_EXTRACT_DIR}/bin/thr" ]]; then
     warn "Archive did not contain a thr binary."
     return 1
   fi
 
-  chmod +x "${THR_TMPDIR}/thr"
-  THR_INSTALLED_BIN="${THR_TMPDIR}/thr"
+  chmod +x "${THR_EXTRACT_DIR}/bin/thr"
 }
 
 shell_rc_file() {
@@ -197,8 +207,8 @@ strip_thr_path_blocks() {
 
   [[ -f "$file" ]] || return 0
   tmp="$(mktemp "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
-  awk -v m1="$THR_PATH_MARKER" -v m2="$THR_OLD_PATH_MARKER" -v m3="$THR_OLD_GO_PATH_MARKER" '
-    $0 == m1 || $0 == m2 || $0 == m3 { skip = 1; next }
+  awk -v m1="$THR_PATH_MARKER" -v m2="$THR_LEGACY_HOMEBREW_PATH_MARKER" -v m3="$THR_OLD_PATH_MARKER" -v m4="$THR_OLD_GO_PATH_MARKER" '
+    $0 == m1 || $0 == m2 || $0 == m3 || $0 == m4 { skip = 1; next }
     skip && /^export PATH=/ { skip = 0; next }
     skip { next }
     { print }
@@ -233,8 +243,16 @@ ensure_dir_on_path() {
   log "Added ${dir} to PATH in ${rc}"
 }
 
-install_dir() {
-  printf '%s' "$(brew --prefix)/bin"
+install_prefix() {
+  printf '%s' "${THR_INSTALL_PREFIX:-$HOME/.local}"
+}
+
+install_bin_dir() {
+  printf '%s/bin' "$(install_prefix)"
+}
+
+install_lib_dir() {
+  printf '%s/lib/thr' "$(install_prefix)"
 }
 
 ensure_install_dir_exists() {
@@ -253,17 +271,32 @@ ensure_install_dir_exists() {
 }
 
 install_binary() {
-  local dir dst
+  local dir lib_dir dst
 
-  dir="$(install_dir)"
+  dir="$(install_bin_dir)"
+  lib_dir="$(install_lib_dir)"
   dst="${dir}/thr"
   ensure_install_dir_exists "$dir"
+  ensure_install_dir_exists "$lib_dir"
 
   if [[ -w "$dir" ]]; then
-    install -m 0755 "$THR_INSTALLED_BIN" "$dst"
+    install -m 0755 "${THR_EXTRACT_DIR}/bin/thr" "$dst"
   else
     log "Installing thr to ${dst} (you may be prompted for sudo)..."
-    sudo install -m 0755 "$THR_INSTALLED_BIN" "$dst"
+    sudo install -m 0755 "${THR_EXTRACT_DIR}/bin/thr" "$dst"
+  fi
+
+  if [[ -w "$lib_dir" ]]; then
+    rm -rf "${lib_dir}/onnxruntime/${THR_ONNXRUNTIME_VERSION}"
+    mkdir -p "$lib_dir"
+    cp -R "${THR_EXTRACT_DIR}/lib/thr/." "$lib_dir/"
+    install -m 0644 "${THR_EXTRACT_DIR}/manifest.json" "${lib_dir}/manifest.json"
+  else
+    log "Installing thr runtime files to ${lib_dir} (you may be prompted for sudo)..."
+    sudo rm -rf "${lib_dir}/onnxruntime/${THR_ONNXRUNTIME_VERSION}"
+    sudo mkdir -p "$lib_dir"
+    sudo cp -R "${THR_EXTRACT_DIR}/lib/thr/." "$lib_dir/"
+    sudo install -m 0644 "${THR_EXTRACT_DIR}/manifest.json" "${lib_dir}/manifest.json"
   fi
 
   THR_INSTALLED_BIN="$dst"
@@ -691,10 +724,7 @@ offer_agent_skill_setup() {
 
 main() {
   ensure_macos
-  ensure_homebrew
-  ensure_minisign
-  download_release_binary
-  ensure_onnxruntime
+  download_release_archive
   install_binary
   prefetch_model
   offer_agent_skill_setup

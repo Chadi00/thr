@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-THR_PATH_MARKER="# thr install: add Homebrew bin to PATH (https://github.com/Chadi00/thr)"
+THR_PATH_MARKER="# thr install: add thr bin to PATH (https://github.com/Chadi00/thr)"
+THR_LEGACY_HOMEBREW_PATH_MARKER="# thr install: add Homebrew bin to PATH (https://github.com/Chadi00/thr)"
 THR_OLD_PATH_MARKER="# thr install: add thr bin dir to PATH (https://github.com/Chadi00/thr)"
 THR_OLD_GO_PATH_MARKER="# thr install: add Go bin to PATH (https://github.com/Chadi00/thr)"
 
@@ -74,10 +75,7 @@ remove_thr_binaries() {
     return 0
   fi
 
-  if need_cmd brew; then
-    candidates+=("$(brew --prefix)/bin")
-  fi
-  candidates+=(/opt/homebrew/bin /usr/local/bin)
+  candidates+=("${THR_INSTALL_PREFIX:-$HOME/.local}/bin" /opt/homebrew/bin /usr/local/bin)
 
   for dir in "${candidates[@]}"; do
     case " ${seen} " in
@@ -94,8 +92,8 @@ strip_path_blocks_from_file() {
 
   [[ -f "$file" ]] || return 0
   tmp="$(mktemp "${TMPDIR:-/tmp}/thr-uninstall.XXXXXX")"
-  awk -v m1="$THR_PATH_MARKER" -v m2="$THR_OLD_PATH_MARKER" -v m3="$THR_OLD_GO_PATH_MARKER" '
-    $0 == m1 || $0 == m2 || $0 == m3 { skip = 1; next }
+  awk -v m1="$THR_PATH_MARKER" -v m2="$THR_LEGACY_HOMEBREW_PATH_MARKER" -v m3="$THR_OLD_PATH_MARKER" -v m4="$THR_OLD_GO_PATH_MARKER" '
+    $0 == m1 || $0 == m2 || $0 == m3 || $0 == m4 { skip = 1; next }
     skip && /^export PATH=/ { skip = 0; next }
     skip { next }
     { print }
@@ -109,10 +107,25 @@ remove_install_path_lines() {
 
   for file in "${ZDOTDIR:-$HOME}/.zshrc" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
     [[ -f "$file" ]] || continue
-    if grep -qF "$THR_PATH_MARKER" "$file" 2>/dev/null || grep -qF "$THR_OLD_PATH_MARKER" "$file" 2>/dev/null || grep -qF "$THR_OLD_GO_PATH_MARKER" "$file" 2>/dev/null; then
+    if grep -qF "$THR_PATH_MARKER" "$file" 2>/dev/null || grep -qF "$THR_LEGACY_HOMEBREW_PATH_MARKER" "$file" 2>/dev/null || grep -qF "$THR_OLD_PATH_MARKER" "$file" 2>/dev/null || grep -qF "$THR_OLD_GO_PATH_MARKER" "$file" 2>/dev/null; then
       strip_path_blocks_from_file "$file"
     fi
   done
+}
+
+remove_runtime_files() {
+  local dir="${THR_INSTALL_PREFIX:-$HOME/.local}/lib/thr"
+
+  [[ -e "$dir" ]] || return 0
+  if rm -rf "$dir" 2>/dev/null; then
+    log "Removed ${dir}"
+    return 0
+  fi
+  if sudo rm -rf "$dir" 2>/dev/null; then
+    log "Removed ${dir} (needed sudo)"
+    return 0
+  fi
+  warn "Could not remove ${dir}"
 }
 
 remove_memory_store() {
@@ -164,6 +177,7 @@ main() {
   ensure_macos
   log "Removing thr binaries..."
   remove_thr_binaries
+  remove_runtime_files
 
   log "Removing install PATH snippets (if any)..."
   remove_install_path_lines
@@ -172,9 +186,6 @@ main() {
   remove_model_cache
   remove_empty_thr_home
   log "Done."
-  if need_cmd brew && brew list --versions onnxruntime >/dev/null 2>&1; then
-    log "Homebrew onnxruntime was left installed. Remove it manually if you no longer need it: brew uninstall onnxruntime"
-  fi
 }
 
 main "$@"

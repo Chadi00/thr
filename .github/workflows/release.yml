@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release
@@ -109,13 +111,33 @@ jobs:
             -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
             -o thr ./cmd/thr
 
+      - name: Build ONNX Runtime for Intel macOS
+        if: matrix.goarch == 'amd64'
+        run: |
+          set -euo pipefail
+          git clone --recursive --depth 1 --branch v1.25.1 https://github.com/microsoft/onnxruntime.git "${RUNNER_TEMP}/onnxruntime"
+          cd "${RUNNER_TEMP}/onnxruntime"
+          ./build.sh --config Release --build_shared_lib --parallel --skip_tests --compile_no_warning_as_error
+          ort_lib="$(find build -type f -name libonnxruntime.dylib | head -n 1)"
+          test -n "$ort_lib"
+          echo "THR_ONNXRUNTIME_LIB=${ort_lib}" >>"$GITHUB_ENV"
+          echo "THR_ONNXRUNTIME_LICENSE_DIR=${RUNNER_TEMP}/onnxruntime" >>"$GITHUB_ENV"
+          echo "THR_ONNXRUNTIME_SOURCE=ci-source-build" >>"$GITHUB_ENV"
+
       - name: Package
-        run: tar czvf "thr_darwin_${{ matrix.goarch }}.tar.gz" thr
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          THR_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          THR_RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          THR_PACKAGE_BINARY: thr
+          THR_PACKAGE_OUT_DIR: dist
+        run: bash scripts/package_release.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-darwin-${{ matrix.goarch }}
-          path: thr_darwin_${{ matrix.goarch }}.tar.gz
+          path: dist/thr_darwin_${{ matrix.goarch }}.tar.gz
 
   smoke:
     needs:
@@ -139,20 +161,14 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Install release verification tools
-        run: brew list --versions minisign >/dev/null 2>&1 || brew install minisign
-
       - name: Generate checksums for smoke test
-        env:
-          # Generate with `minisign -G -W`; commit the matching public key in install.sh.
-          THR_MINISIGN_SECRET_KEY: ${{ secrets.THR_MINISIGN_SECRET_KEY }}
         run: |
+          set -euo pipefail
+          ssh-keygen -q -t ed25519 -N '' -C 'thr-smoke' -f "${RUNNER_TEMP}/thr_smoke_signing_key"
+          echo "THR_INSTALL_ALLOWED_SIGNERS=thr-release $(cat "${RUNNER_TEMP}/thr_smoke_signing_key.pub")" >>"$GITHUB_ENV"
           cd dist
           shasum -a 256 thr_darwin_*.tar.gz > checksums.txt
-          test -n "${THR_MINISIGN_SECRET_KEY}"
-          printf '%s' "${THR_MINISIGN_SECRET_KEY}" > minisign.key
-          chmod 600 minisign.key
-          minisign -Sm checksums.txt -s minisign.key -x checksums.txt.minisig -W
+          ssh-keygen -Y sign -f "${RUNNER_TEMP}/thr_smoke_signing_key" -n thr-release checksums.txt >/dev/null 2>/dev/null
 
       - name: Smoke test installer with built archives
         run: THR_INSTALL_TEST_BASE_URL="file://${GITHUB_WORKSPACE}/dist" bash scripts/installer_smoke.sh
@@ -170,20 +186,26 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Install release signing tools
-        run: brew list --versions minisign >/dev/null 2>&1 || brew install minisign
-
       - name: Generate checksums
         env:
-          # Generate with `minisign -G -W`; commit the matching public key in install.sh.
-          THR_MINISIGN_SECRET_KEY: ${{ secrets.THR_MINISIGN_SECRET_KEY }}
+          # Must match THR_SSH_ALLOWED_SIGNERS in install.sh.
+          THR_SSH_SIGNING_KEY: ${{ secrets.THR_SSH_SIGNING_KEY }}
         run: |
+          set -euo pipefail
           cd dist
           shasum -a 256 thr_darwin_*.tar.gz | tee checksums.txt
-          test -n "${THR_MINISIGN_SECRET_KEY}"
-          printf '%s' "${THR_MINISIGN_SECRET_KEY}" > minisign.key
-          chmod 600 minisign.key
-          minisign -Sm checksums.txt -s minisign.key -x checksums.txt.minisig -W
+          test -n "${THR_SSH_SIGNING_KEY}"
+          printf '%s\n' "${THR_SSH_SIGNING_KEY}" > signing_key
+          chmod 600 signing_key
+          ssh-keygen -Y sign -f signing_key -n thr-release checksums.txt >/dev/null 2>/dev/null
+          rm -f signing_key
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/thr_darwin_*.tar.gz
+            dist/checksums.txt
+            dist/checksums.txt.sig
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -193,4 +215,4 @@ jobs:
           files: |
             dist/thr_darwin_*.tar.gz
             dist/checksums.txt
-            dist/checksums.txt.minisig
+            dist/checksums.txt.sig

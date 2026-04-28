@@ -57,64 +57,51 @@ EOF
 
 create_release_fixture() {
   local arch archive checksum
+  local stage="$WORK_DIR/stage"
+  local runtime_dir
 
   arch="$(normalize_arch)"
   archive="thr_darwin_${arch}.tar.gz"
   mkdir -p "$WORK_DIR/release"
-  create_stub_binary "$WORK_DIR/release/thr"
-  tar -czf "$WORK_DIR/release/$archive" -C "$WORK_DIR/release" thr
+  runtime_dir="$stage/lib/thr/onnxruntime/1.25.1/darwin-${arch}"
+  mkdir -p "$stage/bin" "$runtime_dir"
+  create_stub_binary "$stage/bin/thr"
+  printf 'stub onnxruntime\n' >"$runtime_dir/libonnxruntime.dylib"
+  cat >"$stage/manifest.json" <<EOF
+{"schema_version":1,"target":"darwin-${arch}","thr":{"path":"bin/thr"},"onnxruntime":{"version":"1.25.1","library_path":"lib/thr/onnxruntime/1.25.1/darwin-${arch}/libonnxruntime.dylib"}}
+EOF
+  tar -czf "$WORK_DIR/release/$archive" -C "$stage" bin lib manifest.json
   checksum="$(sha256_file "$WORK_DIR/release/$archive")"
   printf '%s  %s\n' "$checksum" "$archive" >"$WORK_DIR/release/checksums.txt"
-  : >"$WORK_DIR/release/checksums.txt.minisig"
 }
 
-setup_fake_brew() {
-  local brew_bin="$WORK_DIR/fakebrew/bin/brew"
-  local minisign_bin="$WORK_DIR/fakebrew/bin/minisign"
-  local brew_prefix="$WORK_DIR/homebrew"
+sign_release_fixture() {
+  local key="$WORK_DIR/signing_key"
+  local pub
 
-  mkdir -p "$WORK_DIR/fakebrew/bin" "$brew_prefix/bin"
-  : >"$brew_prefix/.onnxruntime-installed"
-  cat >"$brew_bin" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-prefix="${THR_SMOKE_BREW_PREFIX:?}"
-case "${1:-}" in
-  --prefix)
-    printf '%s\n' "$prefix"
-    ;;
-  list)
-    if [[ "${2:-}" == '--versions' && "${3:-}" == 'onnxruntime' ]]; then
-      if [[ -f "$prefix/.onnxruntime-installed" ]]; then
-        printf 'onnxruntime 1.0.0\n'
-        exit 0
-      fi
-      exit 1
+  ssh-keygen -q -t ed25519 -N '' -C 'thr-smoke' -f "$key"
+  ssh-keygen -Y sign -f "$key" -n thr-release "$WORK_DIR/release/checksums.txt" >/dev/null 2>/dev/null
+  pub="$(cat "${key}.pub")"
+  export THR_INSTALL_ALLOWED_SIGNERS="thr-release ${pub}"
+}
+
+hide_homebrew_from_path() {
+  local path_entry filtered=""
+
+  IFS=: read -r -a path_parts <<<"$PATH"
+  for path_entry in "${path_parts[@]}"; do
+    case "$path_entry" in
+      *homebrew* | /usr/local/bin)
+        continue
+        ;;
+    esac
+    if [[ -z "$filtered" ]]; then
+      filtered="$path_entry"
+    else
+      filtered="${filtered}:$path_entry"
     fi
-    exit 1
-    ;;
-  install)
-    if [[ "${2:-}" == 'onnxruntime' ]]; then
-      : >"$prefix/.onnxruntime-installed"
-      mkdir -p "$prefix/bin"
-      exit 0
-    fi
-    exit 1
-    ;;
-  *)
-    exit 1
-    ;;
-esac
-EOF
-  chmod +x "$brew_bin"
-  cat >"$minisign_bin" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exit 0
-EOF
-  chmod +x "$minisign_bin"
-  export THR_SMOKE_BREW_PREFIX="$brew_prefix"
-  export PATH="$WORK_DIR/fakebrew/bin:$brew_prefix/bin:$PATH"
+  done
+  export PATH="$filtered"
 }
 
 prepare_home() {
@@ -154,6 +141,30 @@ assert_agent_skill_prompt_skipped() {
   done
 }
 
+assert_install_fails() {
+  local release_dir="$1"
+  local label="$2"
+
+  if THR_INSTALL_TEST_BASE_URL="file://${release_dir}" THR_INSTALL_SKIP_SKILL_PROMPT=1 bash "$ROOT_DIR/install.sh" >/dev/null 2>&1; then
+    fail "expected install to reject ${label}"
+  fi
+}
+
+assert_signature_and_checksum_fail_closed() {
+  local bad_sig_release="$WORK_DIR/bad-signature-release"
+  local bad_archive_release="$WORK_DIR/bad-archive-release"
+  local archive
+
+  cp -R "$WORK_DIR/release" "$bad_sig_release"
+  printf 'tampered\n' >>"$bad_sig_release/checksums.txt"
+  assert_install_fails "$bad_sig_release" "tampered signed checksums"
+
+  cp -R "$WORK_DIR/release" "$bad_archive_release"
+  archive="$(find "$bad_archive_release" -name 'thr_darwin_*.tar.gz' -type f | head -n 1)"
+  printf 'tampered\n' >>"$archive"
+  assert_install_fails "$bad_archive_release" "tampered archive"
+}
+
 main() {
   local release_base_url install_dir
 
@@ -164,23 +175,27 @@ main() {
   prepare_home
   release_base_url="${THR_INSTALL_TEST_BASE_URL:-}"
   if [[ -z "$release_base_url" ]]; then
-    setup_fake_brew
     create_release_fixture
+    sign_release_fixture
+    assert_signature_and_checksum_fail_closed
     release_base_url="file://$WORK_DIR/release"
-    install_dir="$WORK_DIR/homebrew/bin"
-    export THR_UNINSTALL_TEST_BIN_DIRS="$WORK_DIR/homebrew/bin"
+    export THR_INSTALL_PREFIX="$WORK_DIR/prefix"
+    install_dir="$THR_INSTALL_PREFIX/bin"
+    export PATH="${install_dir}:$PATH"
+    export THR_UNINSTALL_TEST_BIN_DIRS="$install_dir"
   else
-    command -v brew >/dev/null 2>&1 || fail 'release smoke requires Homebrew on macOS runners'
-    brew list --versions minisign >/dev/null 2>&1 || brew install minisign
-    brew list --versions onnxruntime >/dev/null 2>&1 || brew install onnxruntime
-    install_dir="$(brew --prefix)/bin"
+    hide_homebrew_from_path
+    export THR_INSTALL_PREFIX="$WORK_DIR/prefix"
+    install_dir="$THR_INSTALL_PREFIX/bin"
+    export PATH="${install_dir}:$PATH"
     unset THR_UNINSTALL_TEST_BIN_DIRS || true
   fi
 
   log 'Running install smoke test'
   THR_INSTALL_TEST_BASE_URL="$release_base_url" THR_INSTALL_SKIP_SKILL_PROMPT=1 bash "$ROOT_DIR/install.sh"
 
-  [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the Homebrew bin dir'
+  [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the install bin dir'
+  [[ -f "$THR_INSTALL_PREFIX/lib/thr/manifest.json" ]] || fail 'install did not place thr manifest in the lib dir'
   assert_path_block_present
   assert_thr_usable
   assert_agent_skill_prompt_skipped
@@ -192,6 +207,7 @@ main() {
   bash "$ROOT_DIR/uninstall.sh"
 
   [[ ! -e "$install_dir/thr" ]] || fail 'uninstall left thr behind'
+  [[ ! -e "$THR_INSTALL_PREFIX/lib/thr" ]] || fail 'uninstall left thr runtime files behind'
   [[ -e "$HOME/.thr/thr.db" ]] || fail 'uninstall removed data without confirmation'
   [[ -e "$HOME/.thr/models/model" ]] || fail 'uninstall removed model cache without confirmation'
   assert_path_block_removed

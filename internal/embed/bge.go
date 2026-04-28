@@ -73,13 +73,18 @@ func NewBGEEmbedder(cacheDir string, showPrepareProgress bool) (*BGEEmbedder, er
 	if err := EnsureVerifiedActiveModel(cacheDir, showPrepareProgress); err != nil {
 		return nil, err
 	}
+	onnxLibraryPath, err := resolveONNXRuntimeLibrary()
+	if err != nil {
+		return nil, err
+	}
 
 	showProgress := showPrepareProgress
 	options := fastembed.InitOptions{
-		Model:                fastembed.BGEBaseENV15,
-		CacheDir:             cacheDir,
-		MaxLength:            512,
-		ShowDownloadProgress: &showProgress,
+		Model:                  fastembed.BGEBaseENV15,
+		ONNXRuntimeLibraryPath: onnxLibraryPath,
+		CacheDir:               cacheDir,
+		MaxLength:              512,
+		ShowDownloadProgress:   &showProgress,
 	}
 
 	model, err := fastembed.NewFlagEmbedding(&options)

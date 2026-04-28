@@ -15,7 +15,7 @@ Retrieval runs **on your machine** — no cloud API for search.
 
 ## Install
 
-Requires macOS with [Homebrew](https://brew.sh) installed.
+Requires macOS. Homebrew is not required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
@@ -90,10 +90,17 @@ Other agents that support Agent Skills can install the same [`skills/thr`](skill
 |--|--------|
 | Database | `~/.thr/thr.db` |
 | Embedding cache | `~/.thr/models` (`THR_MODEL_CACHE` overrides) |
+| Install prefix | `~/.local` (`THR_INSTALL_PREFIX` overrides) |
 
 thr stores memories as local plaintext in SQLite and hardens the default data and model-cache paths with private filesystem permissions. It does not encrypt memories at rest.
 
-Semantic vectors use a bundled, pinned, SHA-256-verified [Qdrant/bge-base-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-base-en-v1.5-onnx-Q) model (768-d) with sqlite-vec. `thr prefetch` prepares the local model cache from the installed `thr` binary, so no model files are downloaded during install or normal use. `thr ask` returns only matches within a default vector distance of `0.80`; pass `--max-distance 4` to restore closest-results behavior. If the active model changes in a future release, `thr index` rebuilds semantic embeddings while preserving saved memories. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
+Semantic vectors use a bundled, pinned, SHA-256-verified [Qdrant/bge-base-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-base-en-v1.5-onnx-Q) model (768-d) with sqlite-vec. Release archives also include a pinned ONNX Runtime shared library, so semantic search works without Homebrew or a separate system ONNX Runtime install. `thr prefetch` prepares the local model cache from the installed `thr` binary, so no model files are downloaded during install or normal use. `thr ask` returns only matches within a default vector distance of `0.80`; pass `--max-distance 4` to restore closest-results behavior. If the active model changes in a future release, `thr index` rebuilds semantic embeddings while preserving saved memories. Text recall uses SQLite FTS5, bounded recent substring search, and fuzzy / subsequence scoring so short queries (e.g. `rst` → `rust`) can still match.
+
+Release checksums are signed with an OpenSSH release key and verified by the installer before extraction. GitHub release attestations are published as an additional provenance signal for users who want to verify artifacts with `gh release verify-asset`.
+
+Release signing keys are rotated by adding the new public key to `install.sh`, publishing at least one release that trusts both old and new keys, then removing the old key after older supported releases age out. Existing releases keep verifying with the public key that shipped in their installer.
+
+Maintainers must set the `THR_SSH_SIGNING_KEY` GitHub Actions secret to the private OpenSSH key matching the public signer embedded in `install.sh`.
 
 Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
 
@@ -101,7 +108,7 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 
 ## Platform support
 
-**Supported:** macOS **arm64** and **x86_64**. Prebuilt archives are attached to [Releases](https://github.com/Chadi00/thr/releases), and the recommended install path assumes **Homebrew** is available (see [Install](#install)).
+**Supported:** macOS **arm64** and **x86_64**. Prebuilt, self-contained archives are attached to [Releases](https://github.com/Chadi00/thr/releases).
 
 **Focus:** macOS only. Other platforms are not part of the supported surface.
 
