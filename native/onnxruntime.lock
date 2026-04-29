@@ -21,7 +21,7 @@
       "source_library_path": "lib/libonnxruntime.dylib",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_darwin_arm64.tar.gz",
       "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_darwin_arm64.tar.gz",
-      "runtime_archive_sha256": "",
+      "runtime_archive_sha256": "0042b6f7badb199cf44a9ba2d3caa2a9f62ed30287db108c02f3774514900908",
       "runtime_library_path": "lib/libonnxruntime.dylib",
       "runtime_library_sha256": "8fb965cb044a02621f3f2980df40ca583e3e15f0bdbac0fa9e89b3300ef8a670",
       "license_files": [
@@ -43,9 +43,9 @@
       "source_library_path": "build/MacOS/Release/libonnxruntime.dylib",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_darwin_amd64.tar.gz",
       "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_darwin_amd64.tar.gz",
-      "runtime_archive_sha256": "",
+      "runtime_archive_sha256": "814a9a6fdb4c1405b86005c4466240a8d0597b211108674ab60f5b722b3dd585",
       "runtime_library_path": "lib/libonnxruntime.dylib",
-      "runtime_library_sha256": "",
+      "runtime_library_sha256": "2f9196d68ab4f00efa37d775aacff2e3d8fae59d1db8060c8bf174460df8ae43",
       "license_files": [
         "LICENSE",
         "ThirdPartyNotices.txt",
