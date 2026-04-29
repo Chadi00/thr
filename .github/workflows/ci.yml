@@ -6,9 +6,14 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   shellcheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -18,40 +23,59 @@ jobs:
           sudo apt-get install -y shellcheck
 
       - name: Run shellcheck
-        run: shellcheck install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/package_release.sh scripts/update_model_assets.sh
+        run: shellcheck install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/package_onnxruntime.sh scripts/package_release.sh scripts/package_release_fixture_test.sh scripts/update_model_assets.sh
 
   test:
-    strategy:
-      fail-fast: true
-      matrix:
-        os:
-          - macos-latest
-          - macos-15-intel
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Verify shell scripts parse
-        run: bash -n install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/package_release.sh scripts/update_model_assets.sh
+        run: bash -n install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/package_onnxruntime.sh scripts/package_release.sh scripts/package_release_fixture_test.sh scripts/update_model_assets.sh
 
       - name: Run installer prompt tests
         run: bash scripts/installer_prompt_test.sh
+
+      - name: Run package fixture tests
+        run: bash scripts/package_release_fixture_test.sh
+
+      - name: Run Go tests
+        run: go test ./...
+
+  test-shipping-intel:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Run Go tests
         run: go test ./...
 
   installer-smoke:
-    strategy:
-      fail-fast: true
-      matrix:
-        os:
-          - macos-latest
-          - macos-15-intel
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run installer smoke test
+        run: bash scripts/installer_smoke.sh
+
+  installer-smoke-shipping-intel:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

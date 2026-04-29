@@ -108,6 +108,39 @@ assert_toggle() {
   fi
 }
 
+assert_target() {
+  local os="$1"
+  local arch="$2"
+  local expected="$3"
+  local expected_lib="$4"
+  local got target_os
+
+  export THR_INSTALL_TEST_UNAME_S="$os"
+  export THR_INSTALL_TEST_UNAME_M="$arch"
+  got="$(current_target)"
+  unset THR_INSTALL_TEST_UNAME_S THR_INSTALL_TEST_UNAME_M
+  if [[ "$got" != "$expected" ]]; then
+    fail "expected ${os}/${arch} to map to ${expected}, got ${got}"
+  fi
+  target_os="${got%%-*}"
+  if [[ "$(runtime_library_name "$target_os")" != "$expected_lib" ]]; then
+    fail "expected ${target_os} runtime library ${expected_lib}"
+  fi
+}
+
+assert_target_invalid() {
+  local os="$1"
+  local arch="$2"
+
+  export THR_INSTALL_TEST_UNAME_S="$os"
+  export THR_INSTALL_TEST_UNAME_M="$arch"
+  if current_target >/dev/null 2>&1; then
+    unset THR_INSTALL_TEST_UNAME_S THR_INSTALL_TEST_UNAME_M
+    fail "expected ${os}/${arch} to be rejected"
+  fi
+  unset THR_INSTALL_TEST_UNAME_S THR_INSTALL_TEST_UNAME_M
+}
+
 main() {
   assert_parse 'claude' 'claude-code'
   assert_parse 'claude,codex' 'claude-code codex'
@@ -136,6 +169,12 @@ main() {
   assert_key '\n' 'enter'
   assert_key 'q' 'quit'
   assert_toggle
+  assert_target 'Darwin' 'arm64' 'darwin-arm64' 'libonnxruntime.dylib'
+  assert_target 'Darwin' 'x86_64' 'darwin-amd64' 'libonnxruntime.dylib'
+  assert_target 'Linux' 'aarch64' 'linux-arm64' 'libonnxruntime.so'
+  assert_target 'Linux' 'amd64' 'linux-amd64' 'libonnxruntime.so'
+  assert_target_invalid 'FreeBSD' 'amd64'
+  assert_target_invalid 'Linux' 'riscv64'
 
   printf '[installer-prompt-test] ok\n'
 }

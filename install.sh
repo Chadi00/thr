@@ -59,24 +59,53 @@ cleanup() {
 
 trap cleanup EXIT
 
-ensure_macos() {
-  if [[ "$(uname -s)" == 'Darwin' ]]; then
-    return 0
-  fi
-
-  warn "thr install currently supports macOS only."
-  return 1
+system_name() {
+  printf '%s' "${THR_INSTALL_TEST_UNAME_S:-$(uname -s)}"
 }
 
-normalize_arch() {
-  case "$(uname -m)" in
-    arm64 | aarch64) printf '%s' 'arm64' ;;
-    x86_64 | amd64) printf '%s' 'amd64' ;;
+machine_name() {
+  printf '%s' "${THR_INSTALL_TEST_UNAME_M:-$(uname -m)}"
+}
+
+normalize_os() {
+  case "$(system_name)" in
+    Darwin | darwin) printf '%s' 'darwin' ;;
+    Linux | linux) printf '%s' 'linux' ;;
     *)
-      warn "Unsupported macOS architecture: $(uname -m)"
+      warn "Unsupported operating system: $(system_name)"
       return 1
       ;;
   esac
+}
+
+normalize_arch() {
+  case "$(machine_name)" in
+    arm64 | aarch64) printf '%s' 'arm64' ;;
+    x86_64 | amd64) printf '%s' 'amd64' ;;
+    *)
+      warn "Unsupported architecture: $(machine_name)"
+      return 1
+      ;;
+  esac
+}
+
+runtime_library_name() {
+  case "$1" in
+    darwin) printf '%s' 'libonnxruntime.dylib' ;;
+    linux) printf '%s' 'libonnxruntime.so' ;;
+    *)
+      warn "Unsupported runtime operating system: $1"
+      return 1
+      ;;
+  esac
+}
+
+current_target() {
+  local os arch
+
+  os="$(normalize_os)" || return 1
+  arch="$(normalize_arch)" || return 1
+  printf '%s-%s' "$os" "$arch"
 }
 
 sha256_file() {
@@ -105,9 +134,12 @@ verify_signed_checksums() {
 
 validate_archive_layout() {
   local archive="$1"
-  local arch="$2"
+  local target="$2"
+  local os="${target%%-*}"
   local entry has_bin=0 has_manifest=0 has_runtime=0
-  local runtime_lib="lib/thr/onnxruntime/${THR_ONNXRUNTIME_VERSION}/darwin-${arch}/libonnxruntime.dylib"
+  local runtime_lib
+
+  runtime_lib="lib/thr/onnxruntime/${THR_ONNXRUNTIME_VERSION}/${target}/$(runtime_library_name "$os")"
 
   while IFS= read -r entry; do
     case "$entry" in
@@ -142,15 +174,17 @@ validate_archive_layout() {
 }
 
 download_release_archive() {
-  local arch archive expected actual
+  local target os arch archive expected actual
 
   if ! need_cmd curl || ! need_cmd tar || ! need_cmd ssh-keygen; then
     warn "Install requires curl, tar, and ssh-keygen."
     return 1
   fi
 
-  arch="$(normalize_arch)" || return 1
-  archive="thr_darwin_${arch}.tar.gz"
+  target="$(current_target)" || return 1
+  os="${target%%-*}"
+  arch="${target#*-}"
+  archive="thr_${os}_${arch}.tar.gz"
   THR_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/thr-install.XXXXXX")"
   THR_EXTRACT_DIR="${THR_TMPDIR}/extract"
   mkdir -p "$THR_EXTRACT_DIR"
@@ -174,7 +208,7 @@ download_release_archive() {
     return 1
   fi
 
-  validate_archive_layout "${THR_TMPDIR}/${archive}" "$arch"
+  validate_archive_layout "${THR_TMPDIR}/${archive}" "$target"
 
   tar -xzf "${THR_TMPDIR}/${archive}" -C "$THR_EXTRACT_DIR"
   if [[ ! -f "${THR_EXTRACT_DIR}/bin/thr" ]]; then
@@ -723,7 +757,6 @@ offer_agent_skill_setup() {
 }
 
 main() {
-  ensure_macos
   download_release_archive
   install_binary
   prefetch_model

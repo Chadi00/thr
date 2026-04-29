@@ -21,7 +21,7 @@ concurrency:
 jobs:
   prepare:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.release.outputs.should_release }}
       version: ${{ steps.release.outputs.version }}
@@ -31,6 +31,11 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Decide release version
         id: release
@@ -44,6 +49,14 @@ jobs:
           first_line="$(git log -1 --pretty=%s "$commit")"
           if [[ ! "$first_line" =~ ^(feat|fix|chore)(\(.+\))?!?: ]]; then
             echo "No release tag created: head commit does not start with feat:, fix:, or chore:."
+            echo "should_release=false" >>"$GITHUB_OUTPUT"
+            echo "version=" >>"$GITHUB_OUTPUT"
+            echo "commit=${commit}" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! go run ./scripts/release_targets.go validate --mode release; then
+            echo "::notice::No release created: native runtime assets are not pinned yet. Run native-runtime and update native/onnxruntime.lock."
             echo "should_release=false" >>"$GITHUB_OUTPUT"
             echo "version=" >>"$GITHUB_OUTPUT"
             echo "commit=${commit}" >>"$GITHUB_OUTPUT"
@@ -77,18 +90,13 @@ jobs:
           echo "version=${next}" >>"$GITHUB_OUTPUT"
           echo "commit=${commit}" >>"$GITHUB_OUTPUT"
 
-  build:
+  targets:
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - runner: macos-latest
-            goarch: arm64
-          - runner: macos-15-intel
-            goarch: amd64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_matrix: ${{ steps.matrix.outputs.release_matrix }}
+      smoke_matrix: ${{ steps.matrix.outputs.smoke_matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,11 +105,45 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
+
+      - name: Emit release matrices
+        id: matrix
+        run: |
+          set -euo pipefail
+          {
+            printf 'release_matrix='
+            go run ./scripts/release_targets.go release-matrix | tr -d '\n'
+            printf '\n'
+            printf 'smoke_matrix='
+            go run ./scripts/release_targets.go smoke-matrix | tr -d '\n'
+            printf '\n'
+          } >>"$GITHUB_OUTPUT"
+
+  build:
+    needs:
+      - prepare
+      - targets
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.targets.outputs.release_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Build binary
         env:
           CGO_ENABLED: 1
-          GOOS: darwin
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
@@ -111,22 +153,9 @@ jobs:
             -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
             -o thr ./cmd/thr
 
-      - name: Build ONNX Runtime for Intel macOS
-        if: matrix.goarch == 'amd64'
-        run: |
-          set -euo pipefail
-          git clone --recursive --depth 1 --branch v1.25.1 https://github.com/microsoft/onnxruntime.git "${RUNNER_TEMP}/onnxruntime"
-          cd "${RUNNER_TEMP}/onnxruntime"
-          ./build.sh --config Release --build_shared_lib --parallel --skip_tests --compile_no_warning_as_error
-          ort_lib="$(find build -type f -name libonnxruntime.dylib | head -n 1)"
-          test -n "$ort_lib"
-          echo "THR_ONNXRUNTIME_LIB=${ort_lib}" >>"$GITHUB_ENV"
-          echo "THR_ONNXRUNTIME_LICENSE_DIR=${RUNNER_TEMP}/onnxruntime" >>"$GITHUB_ENV"
-          echo "THR_ONNXRUNTIME_SOURCE=ci-source-build" >>"$GITHUB_ENV"
-
       - name: Package
         env:
-          GOOS: darwin
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           THR_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           THR_RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
@@ -136,21 +165,20 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-darwin-${{ matrix.goarch }}
-          path: dist/thr_darwin_${{ matrix.goarch }}.tar.gz
+          name: dist-${{ matrix.target }}
+          path: dist/${{ matrix.archive }}
 
   smoke:
     needs:
       - prepare
+      - targets
       - build
     if: needs.prepare.outputs.should_release == 'true'
     strategy:
       fail-fast: true
-      matrix:
-        os:
-          - macos-latest
-          - macos-15-intel
-    runs-on: ${{ matrix.os }}
+      matrix: ${{ fromJSON(needs.targets.outputs.smoke_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -167,7 +195,7 @@ jobs:
           ssh-keygen -q -t ed25519 -N '' -C 'thr-smoke' -f "${RUNNER_TEMP}/thr_smoke_signing_key"
           echo "THR_INSTALL_ALLOWED_SIGNERS=thr-release $(cat "${RUNNER_TEMP}/thr_smoke_signing_key.pub")" >>"$GITHUB_ENV"
           cd dist
-          shasum -a 256 thr_darwin_*.tar.gz > checksums.txt
+          shasum -a 256 thr_*.tar.gz > checksums.txt
           ssh-keygen -Y sign -f "${RUNNER_TEMP}/thr_smoke_signing_key" -n thr-release checksums.txt >/dev/null 2>/dev/null
 
       - name: Smoke test installer with built archives
@@ -179,7 +207,8 @@ jobs:
       - build
       - smoke
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -193,7 +222,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          shasum -a 256 thr_darwin_*.tar.gz | tee checksums.txt
+          shasum -a 256 thr_*.tar.gz | tee checksums.txt
           test -n "${THR_SSH_SIGNING_KEY}"
           printf '%s\n' "${THR_SSH_SIGNING_KEY}" > signing_key
           chmod 600 signing_key
@@ -203,7 +232,7 @@ jobs:
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            dist/thr_darwin_*.tar.gz
+            dist/thr_*.tar.gz
             dist/checksums.txt
             dist/checksums.txt.sig
 
@@ -213,6 +242,6 @@ jobs:
           target_commitish: ${{ needs.prepare.outputs.commit }}
           generate_release_notes: true
           files: |
-            dist/thr_darwin_*.tar.gz
+            dist/thr_*.tar.gz
             dist/checksums.txt
             dist/checksums.txt.sig

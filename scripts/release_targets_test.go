@@ -1,0 +1,115 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestReleaseMatrixUsesShippingTargets(t *testing.T) {
+	lock := fixtureLock()
+	matrix := buildMatrix(lock, func(target runtimeTarget) bool {
+		return target.Status == "shipping"
+	})
+
+	if len(matrix.Include) != 2 {
+		t.Fatalf("expected two shipping targets, got %d", len(matrix.Include))
+	}
+	if matrix.Include[0]["target"] != "darwin-amd64" || matrix.Include[1]["target"] != "darwin-arm64" {
+		t.Fatalf("matrix was not target-sorted: %#v", matrix.Include)
+	}
+	if matrix.Include[0]["archive"] != "thr_darwin_amd64.tar.gz" {
+		t.Fatalf("unexpected archive name: %s", matrix.Include[0]["archive"])
+	}
+}
+
+func TestValidateReleaseRequiresPinnedRuntime(t *testing.T) {
+	lock := fixtureLock()
+	lock.Targets[0].RuntimeArchiveSHA256 = ""
+
+	if err := validateLock(lock, "metadata"); err != nil {
+		t.Fatalf("metadata validation should allow runtime assets before they are published: %v", err)
+	}
+	if err := validateLock(lock, "release"); err == nil {
+		t.Fatal("expected release validation to require runtime archive SHA")
+	}
+}
+
+func TestReadLockRejectsDuplicateTargets(t *testing.T) {
+	lock := fixtureLock()
+	lock.Targets = append(lock.Targets, lock.Targets[0])
+	path := writeLock(t, lock)
+
+	if _, err := readLock(path); err == nil {
+		t.Fatal("expected duplicate targets to fail validation")
+	}
+}
+
+func fixtureLock() runtimeLock {
+	return runtimeLock{
+		SchemaVersion:      2,
+		ONNXRuntimeVersion: "1.25.1",
+		NativeReleaseTag:   "thr-native-onnxruntime-v1.25.1",
+		Targets: []runtimeTarget{
+			{
+				Target:               "darwin-arm64",
+				Status:               "shipping",
+				OS:                   "darwin",
+				Arch:                 "arm64",
+				Runner:               "macos-latest",
+				Installer:            "unix",
+				Source:               "official-release-asset",
+				SourceURL:            "https://example.com/ort.tgz",
+				SourceArchiveSHA256:  "source-sha",
+				SourceLibraryPath:    "lib/libonnxruntime.dylib",
+				RuntimeAssetName:     "thr-onnxruntime_1.25.1_darwin_arm64.tar.gz",
+				RuntimeAssetURL:      "https://example.com/runtime.tgz",
+				RuntimeArchiveSHA256: "archive-sha",
+				RuntimeLibraryPath:   "lib/libonnxruntime.dylib",
+				RuntimeLibrarySHA256: "lib-sha",
+				LicenseFiles:         []string{"LICENSE"},
+			},
+			{
+				Target:               "darwin-amd64",
+				Status:               "shipping",
+				OS:                   "darwin",
+				Arch:                 "amd64",
+				Runner:               "macos-15-intel",
+				Installer:            "unix",
+				Source:               "source-build",
+				SourceRepo:           "https://example.com/ort.git",
+				SourceTag:            "v1.25.1",
+				SourceLibraryPath:    "build/MacOS/Release/libonnxruntime.dylib",
+				RuntimeAssetName:     "thr-onnxruntime_1.25.1_darwin_amd64.tar.gz",
+				RuntimeAssetURL:      "https://example.com/runtime-amd64.tgz",
+				RuntimeArchiveSHA256: "archive-sha",
+				RuntimeLibraryPath:   "lib/libonnxruntime.dylib",
+				RuntimeLibrarySHA256: "lib-sha",
+				LicenseFiles:         []string{"LICENSE"},
+			},
+			{
+				Target:    "linux-amd64",
+				Status:    "future",
+				OS:        "linux",
+				Arch:      "amd64",
+				Runner:    "ubuntu-latest",
+				Installer: "unix",
+				Source:    "official-release-asset",
+			},
+		},
+	}
+}
+
+func writeLock(t *testing.T, lock runtimeLock) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "onnxruntime.lock")
+	data, err := json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

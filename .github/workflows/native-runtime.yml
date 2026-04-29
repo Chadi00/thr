@@ -1,0 +1,151 @@
+name: native-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Runtime target to build
+        required: true
+        default: all
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: native-runtime-${{ github.event.inputs.target || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      native_release_tag: ${{ steps.meta.outputs.native_release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Emit native runtime matrix
+        id: matrix
+        env:
+          TARGET: ${{ github.event.inputs.target || 'all' }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'matrix='
+            go run ./scripts/release_targets.go native-matrix --target "$TARGET" | tr -d '\n'
+            printf '\n'
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Emit native runtime metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          tag="$(go run ./scripts/release_targets.go native-release-tag)"
+          echo "native_release_tag=${tag}" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: targets
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build ONNX Runtime from source
+        if: matrix.runtimeSource == 'source-build'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          eval "$(go run ./scripts/release_targets.go native-env --target "$TARGET")"
+          git clone --recursive --depth 1 --branch "$THR_SOURCE_TAG" "$THR_SOURCE_REPO" "${RUNNER_TEMP}/onnxruntime"
+          cd "${RUNNER_TEMP}/onnxruntime"
+          ./build.sh \
+            --config Release \
+            --build_shared_lib \
+            --parallel \
+            --skip_tests \
+            --compile_no_warning_as_error \
+            --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+          ort_lib="$(find build \( -type f -o -type l \) -name "$(basename "$THR_RUNTIME_LIBRARY_PATH")" | head -n 1)"
+          test -n "$ort_lib"
+          echo "THR_ONNXRUNTIME_LIB=${ort_lib}" >>"$GITHUB_ENV"
+          echo "THR_ONNXRUNTIME_LICENSE_DIR=${RUNNER_TEMP}/onnxruntime" >>"$GITHUB_ENV"
+
+      - name: Package normalized ONNX Runtime
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          THR_PACKAGE_OUT_DIR: dist-native
+        run: bash scripts/package_onnxruntime.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-runtime-${{ matrix.target }}
+          path: |
+            dist-native/*.tar.gz
+            dist-native/*.sha256
+
+  publish:
+    needs:
+      - targets
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-native
+          merge-multiple: true
+
+      - name: Generate signed native runtime checksums
+        env:
+          THR_SSH_SIGNING_KEY: ${{ secrets.THR_SSH_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          cd dist-native
+          shasum -a 256 thr-onnxruntime_*.tar.gz | tee checksums.txt
+          test -n "${THR_SSH_SIGNING_KEY}"
+          printf '%s\n' "${THR_SSH_SIGNING_KEY}" > signing_key
+          chmod 600 signing_key
+          ssh-keygen -Y sign -f signing_key -n thr-release checksums.txt >/dev/null 2>/dev/null
+          rm -f signing_key
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist-native/thr-onnxruntime_*.tar.gz
+            dist-native/checksums.txt
+            dist-native/checksums.txt.sig
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.targets.outputs.native_release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ONNX Runtime native assets
+          body: |
+            Native ONNX Runtime assets for thr product releases.
+
+            After this workflow finishes, update `native/onnxruntime.lock` with the `archive_sha256` values from `checksums.txt` and the `library_sha256` values from `*.lib.sha256`.
+          prerelease: true
+          make_latest: false
+          files: |
+            dist-native/thr-onnxruntime_*.tar.gz
+            dist-native/*.sha256
+            dist-native/checksums.txt
+            dist-native/checksums.txt.sig

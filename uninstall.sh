@@ -38,13 +38,16 @@ confirm() {
   esac
 }
 
-ensure_macos() {
-  if [[ "$(uname -s)" == 'Darwin' ]]; then
-    return 0
-  fi
-
-  warn "thr uninstall currently supports macOS only."
-  return 1
+ensure_supported_unix() {
+  case "$(uname -s)" in
+    Darwin | Linux)
+      return 0
+      ;;
+    *)
+      warn "thr uninstall currently supports macOS and Linux."
+      return 1
+      ;;
+  esac
 }
 
 try_rm_thr() {
@@ -174,7 +177,7 @@ remove_empty_thr_home() {
 }
 
 main() {
-  ensure_macos
+  ensure_supported_unix
   log "Removing thr binaries..."
   remove_thr_binaries
   remove_runtime_files

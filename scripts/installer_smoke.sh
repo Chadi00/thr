@@ -27,6 +27,22 @@ normalize_arch() {
   esac
 }
 
+normalize_os() {
+  case "$(uname -s)" in
+    Darwin) printf '%s' 'darwin' ;;
+    Linux) printf '%s' 'linux' ;;
+    *) fail "unsupported operating system: $(uname -s)" ;;
+  esac
+}
+
+runtime_library_name() {
+  case "$1" in
+    darwin) printf '%s' 'libonnxruntime.dylib' ;;
+    linux) printf '%s' 'libonnxruntime.so' ;;
+    *) fail "unsupported runtime operating system: $1" ;;
+  esac
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -56,19 +72,22 @@ EOF
 }
 
 create_release_fixture() {
-  local arch archive checksum
+  local os arch target archive checksum runtime_lib
   local stage="$WORK_DIR/stage"
   local runtime_dir
 
+  os="$(normalize_os)"
   arch="$(normalize_arch)"
-  archive="thr_darwin_${arch}.tar.gz"
+  target="${os}-${arch}"
+  archive="thr_${os}_${arch}.tar.gz"
+  runtime_lib="$(runtime_library_name "$os")"
   mkdir -p "$WORK_DIR/release"
-  runtime_dir="$stage/lib/thr/onnxruntime/1.25.1/darwin-${arch}"
+  runtime_dir="$stage/lib/thr/onnxruntime/1.25.1/${target}"
   mkdir -p "$stage/bin" "$runtime_dir"
   create_stub_binary "$stage/bin/thr"
-  printf 'stub onnxruntime\n' >"$runtime_dir/libonnxruntime.dylib"
+  printf 'stub onnxruntime\n' >"${runtime_dir}/${runtime_lib}"
   cat >"$stage/manifest.json" <<EOF
-{"schema_version":1,"target":"darwin-${arch}","thr":{"path":"bin/thr"},"onnxruntime":{"version":"1.25.1","library_path":"lib/thr/onnxruntime/1.25.1/darwin-${arch}/libonnxruntime.dylib"}}
+{"schema_version":1,"target":"${target}","thr":{"path":"bin/thr"},"onnxruntime":{"version":"1.25.1","library_path":"lib/thr/onnxruntime/1.25.1/${target}/${runtime_lib}"}}
 EOF
   tar -czf "$WORK_DIR/release/$archive" -C "$stage" bin lib manifest.json
   checksum="$(sha256_file "$WORK_DIR/release/$archive")"
@@ -106,26 +125,45 @@ hide_homebrew_from_path() {
 
 prepare_home() {
   export HOME="$WORK_DIR/home"
-  export SHELL=/bin/zsh
+  if command -v zsh >/dev/null 2>&1; then
+    export SHELL=/bin/zsh
+  else
+    export SHELL=/bin/bash
+  fi
   mkdir -p "$HOME"
-  : >"$HOME/.zshrc"
+  case "$(basename "$SHELL")" in
+    zsh) : >"$HOME/.zshrc" ;;
+    *) : >"$HOME/.bashrc" ;;
+  esac
 }
 
 assert_path_block_present() {
-  if grep -qF '# thr install:' "$HOME/.zshrc"; then
+  local rc
+  rc="$(shell_rc_file)"
+  if grep -qF '# thr install:' "$rc"; then
     return 0
   fi
-  command -v thr >/dev/null 2>&1 || fail "expected PATH block in $HOME/.zshrc or thr already on PATH"
+  command -v thr >/dev/null 2>&1 || fail "expected PATH block in ${rc} or thr already on PATH"
 }
 
 assert_path_block_removed() {
-  if grep -qF '# thr install:' "$HOME/.zshrc"; then
-    fail "expected PATH block to be removed from $HOME/.zshrc"
+  local rc
+  rc="$(shell_rc_file)"
+  if grep -qF '# thr install:' "$rc"; then
+    fail "expected PATH block to be removed from ${rc}"
   fi
 }
 
+shell_rc_file() {
+  case "$(basename "${SHELL:-/bin/bash}")" in
+    zsh) printf '%s' "$HOME/.zshrc" ;;
+    bash) printf '%s' "$HOME/.bashrc" ;;
+    *) printf '%s' "$HOME/.profile" ;;
+  esac
+}
+
 assert_thr_usable() {
-  zsh -c 'source "$HOME/.zshrc" && command -v thr >/dev/null && thr --help >/dev/null && thr prefetch >/dev/null'
+  "$SHELL" -c "source \"\$1\" && command -v thr >/dev/null && thr --help >/dev/null && thr prefetch >/dev/null" _ "$(shell_rc_file)"
 }
 
 assert_agent_skill_prompt_skipped() {
@@ -160,17 +198,13 @@ assert_signature_and_checksum_fail_closed() {
   assert_install_fails "$bad_sig_release" "tampered signed checksums"
 
   cp -R "$WORK_DIR/release" "$bad_archive_release"
-  archive="$(find "$bad_archive_release" -name 'thr_darwin_*.tar.gz' -type f | head -n 1)"
+  archive="$(find "$bad_archive_release" -name 'thr_*.tar.gz' -type f | head -n 1)"
   printf 'tampered\n' >>"$archive"
   assert_install_fails "$bad_archive_release" "tampered archive"
 }
 
 main() {
   local release_base_url install_dir
-
-  if [[ "$(uname -s)" != 'Darwin' ]]; then
-    fail 'installer smoke is macOS-only'
-  fi
 
   prepare_home
   release_base_url="${THR_INSTALL_TEST_BASE_URL:-}"

@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ONNXRUNTIME_VERSION="1.25.1"
-ONNXRUNTIME_OSX_ARM64_SHA256="18987ec3187b5f29ba798109750f6135060560ad4e0a52678fcc753ee8fb3091"
 TMP_DIR=""
 
 log() {
@@ -43,32 +42,56 @@ runtime_library_name() {
   esac
 }
 
-download_official_onnxruntime() {
+validate_tar_paths() {
+  local archive="$1"
+  local entry
+
+  while IFS= read -r entry; do
+    case "$entry" in
+      "" | /* | ./* | *"/../"* | "../"* | *"/.." | "..")
+        fail "Archive contains an unsafe path: ${entry}"
+        ;;
+    esac
+  done < <(tar -tzf "$archive")
+}
+
+safe_extract_tar() {
+  local archive="$1"
+  local dest="$2"
+
+  validate_tar_paths "$archive"
+  mkdir -p "$dest"
+  tar -xzf "$archive" -C "$dest"
+}
+
+download_locked_onnxruntime() {
   local target="$1"
-  local archive archive_sha expected_sha url extracted
+  local lock_path="${THR_ONNXRUNTIME_LOCK:-$ROOT_DIR/native/onnxruntime.lock}"
+  local archive runtime_root archive_sha runtime_sha
 
-  case "$target" in
-    darwin-arm64)
-      archive="onnxruntime-osx-arm64-${ONNXRUNTIME_VERSION}.tgz"
-      expected_sha="$ONNXRUNTIME_OSX_ARM64_SHA256"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  need_cmd curl || fail "curl is required when THR_ONNXRUNTIME_LIB is not set"
+  need_cmd go || fail "go is required when THR_ONNXRUNTIME_LIB is not set"
 
-  url="https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${archive}"
-  log "Downloading ${archive}"
-  curl -fsSL "$url" -o "${TMP_DIR}/${archive}"
-  archive_sha="$(sha256_file "${TMP_DIR}/${archive}")"
-  if [[ "$archive_sha" != "$expected_sha" ]]; then
-    fail "ONNX Runtime archive checksum mismatch for ${archive}"
+  eval "$(go run "$ROOT_DIR/scripts/release_targets.go" env --lock "$lock_path" --target "$target")"
+  archive="${TMP_DIR}/${THR_RUNTIME_ASSET_NAME}"
+  runtime_root="${TMP_DIR}/runtime"
+
+  log "Downloading ${THR_RUNTIME_ASSET_NAME}"
+  curl -fsSL "$THR_RUNTIME_ASSET_URL" -o "$archive"
+  archive_sha="$(sha256_file "$archive")"
+  if [[ "$archive_sha" != "$THR_RUNTIME_ARCHIVE_SHA256" ]]; then
+    fail "ONNX Runtime archive checksum mismatch for ${THR_RUNTIME_ASSET_NAME}"
   fi
 
-  tar -xzf "${TMP_DIR}/${archive}" -C "$TMP_DIR"
-  extracted="${TMP_DIR}/${archive%.tgz}"
-  THR_ONNXRUNTIME_LIB="${extracted}/lib/$(runtime_library_name)"
-  THR_ONNXRUNTIME_LICENSE_DIR="$extracted"
+  safe_extract_tar "$archive" "$runtime_root"
+  THR_ONNXRUNTIME_LIB="${runtime_root}/${THR_RUNTIME_LIBRARY_PATH}"
+  THR_ONNXRUNTIME_LICENSE_DIR="$runtime_root"
+
+  [[ -f "$THR_ONNXRUNTIME_LIB" ]] || fail "ONNX Runtime library not found in runtime asset: ${THR_RUNTIME_LIBRARY_PATH}"
+  runtime_sha="$(sha256_file "$THR_ONNXRUNTIME_LIB")"
+  if [[ -n "${THR_RUNTIME_LIBRARY_SHA256:-}" && "$runtime_sha" != "$THR_RUNTIME_LIBRARY_SHA256" ]]; then
+    fail "ONNX Runtime library checksum mismatch for ${THR_RUNTIME_LIBRARY_PATH}"
+  fi
 }
 
 copy_license_if_present() {
@@ -125,7 +148,8 @@ main() {
   install -m 0755 "$binary" "${stage}/bin/thr"
 
   if [[ -z "${THR_ONNXRUNTIME_LIB:-}" ]]; then
-    download_official_onnxruntime "$target" || fail "No official ONNX Runtime asset configured for ${target}; set THR_ONNXRUNTIME_LIB to a CI-built library"
+    download_locked_onnxruntime "$target"
+    runtime_source="${THR_RUNTIME_SOURCE}"
   fi
   [[ -f "$THR_ONNXRUNTIME_LIB" ]] || fail "ONNX Runtime library not found: ${THR_ONNXRUNTIME_LIB}"
   runtime_lib="${runtime_dir}/$(runtime_library_name)"
@@ -137,6 +161,9 @@ main() {
   rel_runtime_lib="lib/thr/onnxruntime/${ONNXRUNTIME_VERSION}/${target}/$(runtime_library_name)"
   thr_sha="$(sha256_file "${stage}/bin/thr")"
   runtime_sha="$(sha256_file "$runtime_lib")"
+  if [[ -n "${THR_RUNTIME_LIBRARY_SHA256:-}" && "$runtime_sha" != "$THR_RUNTIME_LIBRARY_SHA256" ]]; then
+    fail "Packaged ONNX Runtime library checksum mismatch for ${target}"
+  fi
   model_id="$(model_const ActiveModelID)"
   model_revision="$(model_const ActiveModelRevision)"
   model_dimension="$(awk '/ActiveModelDimension/ { print $3; exit }' "$ROOT_DIR/internal/embed/bge.go")"

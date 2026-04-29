@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - macOS release archives are now self-contained with a pinned ONNX Runtime shared library, so install and semantic search no longer require Homebrew.
 - Release checksum verification now uses OpenSSH signatures instead of a Homebrew-provided `minisign`.
+- Release packaging is now target metadata driven, with ONNX Runtime builds moved to a separate native-runtime workflow so normal product releases do not compile native dependencies.
+- CI now caches Go builds and keeps slower shipping-platform checks on the master/release path instead of every pull request.
 
 ## [0.1.15] - 2026-04-26
 
