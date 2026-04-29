@@ -82,7 +82,7 @@ jobs:
             --skip_tests \
             --compile_no_warning_as_error \
             --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
-          ort_lib="$(find build \( -type f -o -type l \) -name "$(basename "$THR_RUNTIME_LIBRARY_PATH")" | head -n 1)"
+          ort_lib="$(find "${RUNNER_TEMP}/onnxruntime/build" \( -type f -o -type l \) -name "$(basename "$THR_RUNTIME_LIBRARY_PATH")" | head -n 1)"
           test -n "$ort_lib"
           echo "THR_ONNXRUNTIME_LIB=${ort_lib}" >>"$GITHUB_ENV"
           echo "THR_ONNXRUNTIME_LICENSE_DIR=${RUNNER_TEMP}/onnxruntime" >>"$GITHUB_ENV"
