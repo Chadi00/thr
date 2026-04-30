@@ -36,3 +36,17 @@ func TestResolveONNXRuntimeLibraryRejectsMissingOverride(t *testing.T) {
 		t.Fatalf("expected error to mention %s, got %v", onnxRuntimeEnvVar, err)
 	}
 }
+
+func TestONNXRuntimeLibraryNameForGOOS(t *testing.T) {
+	tests := map[string]string{
+		"darwin":  "libonnxruntime.dylib",
+		"linux":   "libonnxruntime.so",
+		"windows": "onnxruntime.dll",
+	}
+
+	for goos, want := range tests {
+		if got := onnxRuntimeLibraryNameForGOOS(goos); got != want {
+			t.Fatalf("library name for %s = %q, want %q", goos, got, want)
+		}
+	}
+}

@@ -5,7 +5,7 @@
 A local CLI for memories you can find again with **semantic** and **keyword** search.
 
 [![Latest release](https://img.shields.io/github/v/release/Chadi00/thr?style=flat-square&logo=github)](https://github.com/Chadi00/thr/releases)
-[![Platform](https://img.shields.io/badge/platform-macOS-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
 
 Retrieval runs **on your machine** — no cloud API for search.
 
@@ -15,7 +15,7 @@ Retrieval runs **on your machine** — no cloud API for search.
 
 ## Install
 
-Requires macOS. Homebrew is not required.
+Requires macOS or glibc Linux. Homebrew is not required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
@@ -110,9 +110,9 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 
 ## Platform support
 
-**Supported:** macOS **arm64** and **x86_64**. Prebuilt, self-contained archives are attached to [Releases](https://github.com/Chadi00/thr/releases).
+**Supported:** macOS **arm64** / **x86_64** and glibc Linux **arm64** / **x86_64**. Prebuilt, self-contained archives are attached to [Releases](https://github.com/Chadi00/thr/releases).
 
-**Next:** Linux and Windows are represented in `native/onnxruntime.lock` as future targets so their release artifacts can use the same pinned-runtime packaging path when support is enabled.
+**Not yet supported:** Alpine/musl Linux and Windows.
 
 ---
 

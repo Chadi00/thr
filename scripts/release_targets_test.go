@@ -14,14 +14,20 @@ func TestReleaseMatrixUsesShippingTargets(t *testing.T) {
 		return target.Status == "shipping"
 	})
 
-	if len(matrix.Include) != 2 {
-		t.Fatalf("expected two shipping targets, got %d", len(matrix.Include))
+	if len(matrix.Include) != 4 {
+		t.Fatalf("expected four shipping targets, got %d", len(matrix.Include))
 	}
-	if matrix.Include[0]["target"] != "darwin-amd64" || matrix.Include[1]["target"] != "darwin-arm64" {
+	if matrix.Include[0]["target"] != "darwin-amd64" ||
+		matrix.Include[1]["target"] != "darwin-arm64" ||
+		matrix.Include[2]["target"] != "linux-amd64" ||
+		matrix.Include[3]["target"] != "linux-arm64" {
 		t.Fatalf("matrix was not target-sorted: %#v", matrix.Include)
 	}
 	if matrix.Include[0]["archive"] != "thr_darwin_amd64.tar.gz" {
 		t.Fatalf("unexpected archive name: %s", matrix.Include[0]["archive"])
+	}
+	if matrix.Include[2]["archive"] != "thr_linux_amd64.tar.gz" {
+		t.Fatalf("unexpected linux archive name: %s", matrix.Include[2]["archive"])
 	}
 }
 
@@ -108,13 +114,40 @@ func fixtureLock() runtimeLock {
 				LicenseFiles:         []string{"LICENSE"},
 			},
 			{
-				Target:    "linux-amd64",
-				Status:    "future",
-				OS:        "linux",
-				Arch:      "amd64",
-				Runner:    "ubuntu-latest",
-				Installer: "unix",
-				Source:    "official-release-asset",
+				Target:               "linux-amd64",
+				Status:               "shipping",
+				OS:                   "linux",
+				Arch:                 "amd64",
+				Runner:               "ubuntu-latest",
+				Installer:            "unix",
+				Source:               "official-release-asset",
+				SourceURL:            "https://example.com/ort-linux.tgz",
+				SourceArchiveSHA256:  "source-sha",
+				SourceLibraryPath:    "lib/libonnxruntime.so",
+				RuntimeAssetName:     "thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
+				RuntimeAssetURL:      "https://example.com/runtime-linux.tgz",
+				RuntimeArchiveSHA256: "archive-sha",
+				RuntimeLibraryPath:   "lib/libonnxruntime.so",
+				RuntimeLibrarySHA256: "lib-sha",
+				LicenseFiles:         []string{"LICENSE"},
+			},
+			{
+				Target:               "linux-arm64",
+				Status:               "shipping",
+				OS:                   "linux",
+				Arch:                 "arm64",
+				Runner:               "ubuntu-24.04-arm",
+				Installer:            "unix",
+				Source:               "official-release-asset",
+				SourceURL:            "https://example.com/ort-linux-arm64.tgz",
+				SourceArchiveSHA256:  "source-sha",
+				SourceLibraryPath:    "lib/libonnxruntime.so",
+				RuntimeAssetName:     "thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
+				RuntimeAssetURL:      "https://example.com/runtime-linux-arm64.tgz",
+				RuntimeArchiveSHA256: "archive-sha",
+				RuntimeLibraryPath:   "lib/libonnxruntime.so",
+				RuntimeLibrarySHA256: "lib-sha",
+				LicenseFiles:         []string{"LICENSE"},
 			},
 		},
 	}

@@ -35,11 +35,12 @@ sha256_file() {
 }
 
 runtime_library_name() {
-  case "${GOOS:-darwin}" in
-    darwin) printf '%s' 'libonnxruntime.dylib' ;;
-    windows) printf '%s' 'onnxruntime.dll' ;;
-    *) printf '%s' 'onnxruntime.so' ;;
-  esac
+	case "${GOOS:-darwin}" in
+	darwin) printf '%s' 'libonnxruntime.dylib' ;;
+	linux) printf '%s' 'libonnxruntime.so' ;;
+	windows) printf '%s' 'onnxruntime.dll' ;;
+	*) printf '%s' 'onnxruntime.so' ;;
+	esac
 }
 
 validate_tar_paths() {
@@ -72,7 +73,7 @@ download_locked_onnxruntime() {
   need_cmd curl || fail "curl is required when THR_ONNXRUNTIME_LIB is not set"
   need_cmd go || fail "go is required when THR_ONNXRUNTIME_LIB is not set"
 
-  eval "$(go run "$ROOT_DIR/scripts/release_targets.go" env --lock "$lock_path" --target "$target")"
+  eval "$(env GOOS= GOARCH= go run "$ROOT_DIR/scripts/release_targets.go" env --lock "$lock_path" --target "$target")"
   archive="${TMP_DIR}/${THR_RUNTIME_ASSET_NAME}"
   runtime_root="${TMP_DIR}/runtime"
 

@@ -136,7 +136,7 @@ main() {
   need_cmd go || fail "go is required"
   need_cmd shasum || need_cmd sha256sum || fail "shasum or sha256sum is required"
 
-  eval "$(go run "$ROOT_DIR/scripts/release_targets.go" native-env --lock "$lock_path" --target "$target")"
+  eval "$(env GOOS= GOARCH= go run "$ROOT_DIR/scripts/release_targets.go" native-env --lock "$lock_path" --target "$target")"
 
   TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thr-runtime-package.XXXXXX")"
   stage="${TMP_DIR}/stage"

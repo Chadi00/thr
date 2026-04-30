@@ -76,6 +76,9 @@ func onnxSharedLibraryPathForLoad() string {
 	if runtime.GOOS == "darwin" {
 		return "libonnxruntime.dylib"
 	}
+	if runtime.GOOS == "linux" {
+		return "libonnxruntime.so"
+	}
 	if runtime.GOOS == "windows" {
 		return "onnxruntime.dll"
 	}

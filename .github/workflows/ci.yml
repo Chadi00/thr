@@ -23,10 +23,16 @@ jobs:
           sudo apt-get install -y shellcheck
 
       - name: Run shellcheck
-        run: shellcheck install.sh uninstall.sh scripts/installer_prompt_test.sh scripts/installer_smoke.sh scripts/package_onnxruntime.sh scripts/package_release.sh scripts/package_release_fixture_test.sh scripts/update_model_assets.sh
+        run: shellcheck install.sh uninstall.sh scripts/*.sh
 
   test:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +70,13 @@ jobs:
         run: go test ./...
 
   installer-smoke:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

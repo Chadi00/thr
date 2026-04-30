@@ -5,10 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.20] - 2026-04-30
 
 ### Changed
 
+- Release metadata and CI now cover glibc Linux arm64 and x86_64 alongside macOS, using pinned ONNX Runtime CPU assets.
+- Linux runtime lookup and release packaging now use the platform-correct `libonnxruntime.so` library name.
 - macOS release archives are now self-contained with a pinned ONNX Runtime shared library, so install and semantic search no longer require Homebrew.
 - Release checksum verification now uses OpenSSH signatures instead of a Homebrew-provided `minisign`.
 - Release packaging is now target metadata driven, with ONNX Runtime builds moved to a separate native-runtime workflow so normal product releases do not compile native dependencies.

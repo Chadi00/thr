@@ -54,9 +54,15 @@ func runtimeTarget() string {
 }
 
 func onnxRuntimeLibraryName() string {
-	switch runtime.GOOS {
+	return onnxRuntimeLibraryNameForGOOS(runtime.GOOS)
+}
+
+func onnxRuntimeLibraryNameForGOOS(goos string) string {
+	switch goos {
 	case "darwin":
 		return "libonnxruntime.dylib"
+	case "linux":
+		return "libonnxruntime.so"
 	case "windows":
 		return "onnxruntime.dll"
 	default:

@@ -164,6 +164,9 @@ shell_rc_file() {
 
 assert_thr_usable() {
   "$SHELL" -c "source \"\$1\" && command -v thr >/dev/null && thr --help >/dev/null && thr prefetch >/dev/null" _ "$(shell_rc_file)"
+  if [[ "${THR_SMOKE_REAL_BINARY:-0}" == "1" ]]; then
+    "$SHELL" -c "source \"\$1\" && thr add 'thr installer smoke memory about release validation' >/dev/null && thr ask --max-distance 4 'release validation memory' >/dev/null" _ "$(shell_rc_file)"
+  fi
 }
 
 assert_agent_skill_prompt_skipped() {
@@ -217,12 +220,14 @@ main() {
     install_dir="$THR_INSTALL_PREFIX/bin"
     export PATH="${install_dir}:$PATH"
     export THR_UNINSTALL_TEST_BIN_DIRS="$install_dir"
+    export THR_SMOKE_REAL_BINARY=0
   else
     hide_homebrew_from_path
     export THR_INSTALL_PREFIX="$WORK_DIR/prefix"
     install_dir="$THR_INSTALL_PREFIX/bin"
     export PATH="${install_dir}:$PATH"
     unset THR_UNINSTALL_TEST_BIN_DIRS || true
+    export THR_SMOKE_REAL_BINARY=1
   fi
 
   log 'Running install smoke test'

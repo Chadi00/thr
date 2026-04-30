@@ -54,25 +54,45 @@
     },
     {
       "target": "linux-amd64",
-      "status": "future",
+      "status": "shipping",
       "os": "linux",
       "arch": "amd64",
       "runner": "ubuntu-latest",
       "installer": "unix",
       "source": "official-release-asset",
+      "source_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.25.1/onnxruntime-linux-x64-1.25.1.tgz",
+      "source_archive_sha256": "eb566a49cfc49ef0642f809b69340b5bb656c7c4905ba873526d226f2c005816",
+      "source_library_path": "lib/libonnxruntime.so",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
-      "runtime_library_path": "lib/libonnxruntime.so"
+      "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
+      "runtime_library_path": "lib/libonnxruntime.so",
+      "runtime_library_sha256": "7a7c63fec274e9577477a0158a03a205e3ed9320b032a2df2b2a01b6ae1d3b94",
+      "license_files": [
+        "LICENSE",
+        "ThirdPartyNotices.txt",
+        "Privacy.md"
+      ]
     },
     {
       "target": "linux-arm64",
-      "status": "future",
+      "status": "shipping",
       "os": "linux",
       "arch": "arm64",
       "runner": "ubuntu-24.04-arm",
       "installer": "unix",
       "source": "official-release-asset",
+      "source_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.25.1/onnxruntime-linux-aarch64-1.25.1.tgz",
+      "source_archive_sha256": "daa71b56b00c4ab34798a3d96ca41a32ece4d3e302dc2386d3cca83fd4491214",
+      "source_library_path": "lib/libonnxruntime.so",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
-      "runtime_library_path": "lib/libonnxruntime.so"
+      "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
+      "runtime_library_path": "lib/libonnxruntime.so",
+      "runtime_library_sha256": "e34095ad2791f1f05ed17324ede7873b4fdb4c136b3ba3f1dd5093d2e76d4192",
+      "license_files": [
+        "LICENSE",
+        "ThirdPartyNotices.txt",
+        "Privacy.md"
+      ]
     },
     {
       "target": "windows-amd64",
