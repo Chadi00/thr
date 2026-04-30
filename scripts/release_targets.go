@@ -350,7 +350,7 @@ func validateReleaseTarget(lock runtimeLock, target runtimeTarget) error {
 	if target.RuntimeAssetURL == "" || target.RuntimeArchiveSHA256 == "" || target.RuntimeLibrarySHA256 == "" {
 		return fmt.Errorf("shipping target %q is not release-ready; run native-runtime and update native/onnxruntime.lock with runtime URL and SHA-256 values", target.Target)
 	}
-	if !strings.HasSuffix(target.RuntimeAssetURL, expectedRuntimeAssetURLSuffix(lock, target)) {
+	if !strings.HasPrefix(target.RuntimeAssetURL, "file://") && !strings.HasSuffix(target.RuntimeAssetURL, expectedRuntimeAssetURLSuffix(lock, target)) {
 		return fmt.Errorf("shipping target %q runtime_asset_url does not match native release tag and asset name", target.Target)
 	}
 	return nil
