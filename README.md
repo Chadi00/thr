@@ -102,7 +102,7 @@ Release signing keys are rotated by adding the new public key to `install.sh`, p
 
 Maintainers must set the `THR_SSH_SIGNING_KEY` GitHub Actions secret to the private OpenSSH key matching the public signer embedded in `install.sh`.
 
-Native ONNX Runtime artifacts are built by the manual `native-runtime` workflow and published to a dedicated prerelease tag such as `thr-native-onnxruntime-v1.25.1`. Normal `thr` releases only consume pinned runtime assets from `native/onnxruntime.lock`; they do not compile ONNX Runtime. Until those runtime asset checksums are present in the lock file, the release workflow exits successfully without publishing a product release.
+Native ONNX Runtime artifacts are built by the `native-runtime` workflow and published to a dedicated prerelease tag such as `thr-native-onnxruntime-v1.25.1`. Normal `thr` releases only consume pinned runtime assets from `native/onnxruntime.lock`; they do not compile ONNX Runtime. When a lockfile change leaves a shipping target without pinned runtime metadata, `native-runtime` builds only the missing target artifacts, updates `native/onnxruntime.lock`, and dispatches CI so the normal release workflow can continue from the pinned commit.
 
 Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
 

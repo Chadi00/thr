@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -16,6 +17,7 @@ type runtimeLock struct {
 	SchemaVersion      int             `json:"schema_version"`
 	ONNXRuntimeVersion string          `json:"onnxruntime_version"`
 	NativeReleaseTag   string          `json:"native_release_tag"`
+	RuntimePolicy      json.RawMessage `json:"runtime_policy,omitempty"`
 	Targets            []runtimeTarget `json:"targets"`
 }
 
@@ -27,17 +29,17 @@ type runtimeTarget struct {
 	Runner               string   `json:"runner"`
 	Installer            string   `json:"installer"`
 	Source               string   `json:"source"`
-	SourceURL            string   `json:"source_url"`
-	SourceArchiveSHA256  string   `json:"source_archive_sha256"`
-	SourceRepo           string   `json:"source_repo"`
-	SourceTag            string   `json:"source_tag"`
-	SourceLibraryPath    string   `json:"source_library_path"`
-	RuntimeAssetName     string   `json:"runtime_asset_name"`
-	RuntimeAssetURL      string   `json:"runtime_asset_url"`
-	RuntimeArchiveSHA256 string   `json:"runtime_archive_sha256"`
-	RuntimeLibraryPath   string   `json:"runtime_library_path"`
-	RuntimeLibrarySHA256 string   `json:"runtime_library_sha256"`
-	LicenseFiles         []string `json:"license_files"`
+	SourceURL            string   `json:"source_url,omitempty"`
+	SourceArchiveSHA256  string   `json:"source_archive_sha256,omitempty"`
+	SourceRepo           string   `json:"source_repo,omitempty"`
+	SourceTag            string   `json:"source_tag,omitempty"`
+	SourceLibraryPath    string   `json:"source_library_path,omitempty"`
+	RuntimeAssetName     string   `json:"runtime_asset_name,omitempty"`
+	RuntimeAssetURL      string   `json:"runtime_asset_url,omitempty"`
+	RuntimeArchiveSHA256 string   `json:"runtime_archive_sha256,omitempty"`
+	RuntimeLibraryPath   string   `json:"runtime_library_path,omitempty"`
+	RuntimeLibrarySHA256 string   `json:"runtime_library_sha256,omitempty"`
+	LicenseFiles         []string `json:"license_files,omitempty"`
 }
 
 type matrix struct {
@@ -53,7 +55,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: release_targets.go <release-matrix|smoke-matrix|native-matrix|native-release-tag|env|native-env|validate> [flags]")
+		return errors.New("usage: release_targets.go <release-matrix|smoke-matrix|native-matrix|native-release-tag|env|native-env|update-lock|validate> [flags]")
 	}
 
 	switch args[0] {
@@ -87,6 +89,7 @@ func run(args []string) error {
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		lockPath := fs.String("lock", defaultLockPath, "runtime lock path")
 		onlyTarget := fs.String("target", "all", "target to include, or all")
+		missingRelease := fs.Bool("missing-release", false, "only include shipping targets missing release runtime pins")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -95,10 +98,7 @@ func run(args []string) error {
 			return err
 		}
 		matrix := buildMatrix(lock, func(t runtimeTarget) bool {
-			if t.Status != "shipping" {
-				return false
-			}
-			return *onlyTarget == "all" || t.Target == *onlyTarget
+			return includeNativeTarget(lock, t, *onlyTarget, *missingRelease)
 		})
 		if *onlyTarget != "all" && len(matrix.Include) == 0 {
 			return fmt.Errorf("target %q is not a shipping native runtime target", *onlyTarget)
@@ -120,6 +120,29 @@ func run(args []string) error {
 		return writeTargetEnv(args[1:], false)
 	case "native-env":
 		return writeTargetEnv(args[1:], true)
+	case "update-lock":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		lockPath := fs.String("lock", defaultLockPath, "runtime lock path")
+		artifactDir := fs.String("artifact-dir", "dist-native", "directory containing native runtime artifacts and checksums")
+		repo := fs.String("repo", "", "GitHub repository in owner/name form for runtime asset URLs")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		lock, err := readLock(*lockPath)
+		if err != nil {
+			return err
+		}
+		updated, count, err := updateLockFromArtifacts(lock, *artifactDir, *repo)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return fmt.Errorf("no native runtime artifacts in %s matched shipping targets in %s", *artifactDir, *lockPath)
+		}
+		if err := validateLock(updated, "metadata"); err != nil {
+			return err
+		}
+		return writeLockFile(*lockPath, updated)
 	case "validate":
 		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		lockPath := fs.String("lock", defaultLockPath, "runtime lock path")
@@ -163,7 +186,7 @@ func writeTargetEnv(args []string, native bool) error {
 		if err := validateNativeTarget(target); err != nil {
 			return err
 		}
-	} else if err := validateReleaseTarget(target); err != nil {
+	} else if err := validateReleaseTarget(lock, target); err != nil {
 		return err
 	}
 
@@ -210,6 +233,15 @@ func readLock(path string) (runtimeLock, error) {
 	return lock, validateLock(lock, "metadata")
 }
 
+func writeLockFile(path string, lock runtimeLock) error {
+	data, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o644)
+}
+
 func findTarget(lock runtimeLock, name string) (runtimeTarget, bool) {
 	for _, target := range lock.Targets {
 		if target.Target == name {
@@ -240,6 +272,16 @@ func buildMatrix(lock runtimeLock, include func(runtimeTarget) bool) matrix {
 		return out.Include[i]["target"] < out.Include[j]["target"]
 	})
 	return out
+}
+
+func includeNativeTarget(lock runtimeLock, target runtimeTarget, onlyTarget string, missingRelease bool) bool {
+	if target.Status != "shipping" {
+		return false
+	}
+	if onlyTarget != "all" && target.Target != onlyTarget {
+		return false
+	}
+	return !missingRelease || !releaseTargetReady(lock, target)
 }
 
 func validateLock(lock runtimeLock, mode string) error {
@@ -276,7 +318,7 @@ func validateLock(lock runtimeLock, mode string) error {
 				return err
 			}
 			if mode == "release" {
-				if err := validateReleaseTarget(target); err != nil {
+				if err := validateReleaseTarget(lock, target); err != nil {
 					return err
 				}
 			}
@@ -304,11 +346,131 @@ func validateNativeTarget(target runtimeTarget) error {
 	return nil
 }
 
-func validateReleaseTarget(target runtimeTarget) error {
+func validateReleaseTarget(lock runtimeLock, target runtimeTarget) error {
 	if target.RuntimeAssetURL == "" || target.RuntimeArchiveSHA256 == "" || target.RuntimeLibrarySHA256 == "" {
 		return fmt.Errorf("shipping target %q is not release-ready; run native-runtime and update native/onnxruntime.lock with runtime URL and SHA-256 values", target.Target)
 	}
+	if !strings.HasSuffix(target.RuntimeAssetURL, expectedRuntimeAssetURLSuffix(lock, target)) {
+		return fmt.Errorf("shipping target %q runtime_asset_url does not match native release tag and asset name", target.Target)
+	}
 	return nil
+}
+
+func releaseTargetReady(lock runtimeLock, target runtimeTarget) bool {
+	return validateReleaseTarget(lock, target) == nil
+}
+
+func expectedRuntimeAssetURL(repo string, lock runtimeLock, target runtimeTarget) string {
+	return fmt.Sprintf("https://github.com/%s%s", strings.Trim(repo, "/"), expectedRuntimeAssetURLSuffix(lock, target))
+}
+
+func expectedRuntimeAssetURLSuffix(lock runtimeLock, target runtimeTarget) string {
+	return fmt.Sprintf("/releases/download/%s/%s", lock.NativeReleaseTag, target.RuntimeAssetName)
+}
+
+func updateLockFromArtifacts(lock runtimeLock, artifactDir string, repo string) (runtimeLock, int, error) {
+	archiveSHAs, err := readArchiveChecksums(artifactDir)
+	if err != nil {
+		return runtimeLock{}, 0, err
+	}
+	librarySHAs, err := readLibraryChecksums(artifactDir)
+	if err != nil {
+		return runtimeLock{}, 0, err
+	}
+
+	updates := 0
+	for i := range lock.Targets {
+		target := &lock.Targets[i]
+		if target.Status != "shipping" || target.RuntimeAssetName == "" {
+			continue
+		}
+		assetName := target.RuntimeAssetName
+		targetUpdated := false
+		if sha, ok := archiveSHAs[assetName]; ok {
+			target.RuntimeArchiveSHA256 = sha
+			targetUpdated = true
+		}
+		if sha, ok := librarySHAs[assetName]; ok {
+			target.RuntimeLibrarySHA256 = sha
+			targetUpdated = true
+		}
+		if targetUpdated {
+			if repo != "" {
+				target.RuntimeAssetURL = expectedRuntimeAssetURL(repo, lock, *target)
+			}
+			updates++
+		}
+	}
+	return lock, updates, nil
+}
+
+func readArchiveChecksums(artifactDir string) (map[string]string, error) {
+	checksumsPath := filepath.Join(artifactDir, "checksums.txt")
+	if _, err := os.Stat(checksumsPath); err == nil {
+		return readChecksumFile(checksumsPath, func(path string) string {
+			return filepath.Base(path)
+		})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	out := map[string]string{}
+	matches, err := filepath.Glob(filepath.Join(artifactDir, "*.tar.gz.sha256"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range matches {
+		values, err := readChecksumFile(path, func(_ string) string {
+			return strings.TrimSuffix(filepath.Base(path), ".sha256")
+		})
+		if err != nil {
+			return nil, err
+		}
+		for name, sha := range values {
+			out[name] = sha
+		}
+	}
+	return out, nil
+}
+
+func readLibraryChecksums(artifactDir string) (map[string]string, error) {
+	out := map[string]string{}
+	matches, err := filepath.Glob(filepath.Join(artifactDir, "*.tar.gz.lib.sha256"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range matches {
+		values, err := readChecksumFile(path, func(_ string) string {
+			return strings.TrimSuffix(filepath.Base(path), ".lib.sha256")
+		})
+		if err != nil {
+			return nil, err
+		}
+		for name, sha := range values {
+			out[name] = sha
+		}
+	}
+	return out, nil
+}
+
+func readChecksumFile(path string, nameFromPath func(string) string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for lineNo, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return nil, fmt.Errorf("%s:%d: expected '<sha256> <path>'", path, lineNo+1)
+		}
+		out[nameFromPath(fields[1])] = fields[0]
+	}
+	return out, nil
 }
 
 func writeJSON(value any) error {

@@ -8,8 +8,14 @@ on:
         required: true
         default: all
         type: string
+  push:
+    branches:
+      - master
+    paths:
+      - native/onnxruntime.lock
 
 permissions:
+  actions: write
   contents: write
   id-token: write
   attestations: write
@@ -23,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      has_targets: ${{ steps.matrix.outputs.has_targets }}
       native_release_tag: ${{ steps.meta.outputs.native_release_tag }}
     steps:
       - uses: actions/checkout@v4
@@ -36,12 +43,21 @@ jobs:
         id: matrix
         env:
           TARGET: ${{ github.event.inputs.target || 'all' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          args=(native-matrix --target "$TARGET")
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            args=(native-matrix --target all --missing-release)
+          fi
+          matrix="$(go run ./scripts/release_targets.go "${args[@]}" | tr -d '\n')"
+          has_targets=true
+          if [[ "$matrix" == '{"include":[]}' ]]; then
+            has_targets=false
+          fi
           {
-            printf 'matrix='
-            go run ./scripts/release_targets.go native-matrix --target "$TARGET" | tr -d '\n'
-            printf '\n'
+            echo "matrix=${matrix}"
+            echo "has_targets=${has_targets}"
           } >>"$GITHUB_OUTPUT"
 
       - name: Emit native runtime metadata
@@ -53,6 +69,7 @@ jobs:
 
   build:
     needs: targets
+    if: needs.targets.outputs.has_targets == 'true'
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
@@ -105,9 +122,19 @@ jobs:
     needs:
       - targets
       - build
+    if: needs.targets.outputs.has_targets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - uses: actions/download-artifact@v4
         with:
           path: dist-native
@@ -141,7 +168,7 @@ jobs:
           body: |
             Native ONNX Runtime assets for thr product releases.
 
-            After this workflow finishes, update `native/onnxruntime.lock` with the `archive_sha256` values from `checksums.txt` and the `library_sha256` values from `*.lib.sha256`.
+            The native-runtime workflow updates `native/onnxruntime.lock` from these published assets automatically.
           prerelease: true
           make_latest: false
           files: |
@@ -149,3 +176,33 @@ jobs:
             dist-native/*.sha256
             dist-native/checksums.txt
             dist-native/checksums.txt.sig
+
+      - name: Update native runtime lock
+        id: lock
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          go run ./scripts/release_targets.go update-lock --artifact-dir dist-native --repo "$REPOSITORY"
+          if git diff --quiet -- native/onnxruntime.lock; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+          else
+            git diff -- native/onnxruntime.lock
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit updated native runtime lock
+        if: steps.lock.outputs.changed == 'true' && github.ref_type == 'branch'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native/onnxruntime.lock
+          git commit -m "chore: pin native runtime assets"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Run CI for updated lock
+        if: steps.lock.outputs.changed == 'true' && github.ref_name == 'master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref "$GITHUB_REF_NAME"

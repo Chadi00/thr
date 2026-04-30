@@ -43,6 +43,70 @@ func TestValidateReleaseRequiresPinnedRuntime(t *testing.T) {
 	}
 }
 
+func TestNativeMatrixCanSelectMissingRuntimePins(t *testing.T) {
+	lock := fixtureLock()
+	lock.Targets[0].RuntimeArchiveSHA256 = ""
+
+	matrix := buildMatrix(lock, func(target runtimeTarget) bool {
+		return includeNativeTarget(lock, target, "all", true)
+	})
+
+	if len(matrix.Include) != 1 {
+		t.Fatalf("expected one target with missing pins, got %d", len(matrix.Include))
+	}
+	if matrix.Include[0]["target"] != "darwin-arm64" {
+		t.Fatalf("unexpected missing target: %#v", matrix.Include)
+	}
+}
+
+func TestValidateReleaseRejectsStaleRuntimeURL(t *testing.T) {
+	lock := fixtureLock()
+	lock.Targets[0].RuntimeAssetURL = "https://example.com/releases/download/old-tag/" + lock.Targets[0].RuntimeAssetName
+
+	if err := validateLock(lock, "release"); err == nil {
+		t.Fatal("expected release validation to reject stale runtime_asset_url")
+	}
+}
+
+func TestUpdateLockFromArtifacts(t *testing.T) {
+	lock := fixtureLock()
+	lock.Targets[2].RuntimeAssetURL = ""
+	lock.Targets[2].RuntimeArchiveSHA256 = ""
+	lock.Targets[2].RuntimeLibrarySHA256 = ""
+
+	artifactDir := t.TempDir()
+	assetName := lock.Targets[2].RuntimeAssetName
+	if err := os.WriteFile(filepath.Join(artifactDir, "checksums.txt"), []byte("archive-sha-new  "+assetName+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, assetName+".lib.sha256"), []byte("library-sha-new  lib/libonnxruntime.so\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, count, err := updateLockFromArtifacts(lock, artifactDir, "Chadi00/thr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one updated target, got %d", count)
+	}
+
+	target := updated.Targets[2]
+	if target.RuntimeArchiveSHA256 != "archive-sha-new" {
+		t.Fatalf("archive sha = %q", target.RuntimeArchiveSHA256)
+	}
+	if target.RuntimeLibrarySHA256 != "library-sha-new" {
+		t.Fatalf("library sha = %q", target.RuntimeLibrarySHA256)
+	}
+	wantURL := "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/" + assetName
+	if target.RuntimeAssetURL != wantURL {
+		t.Fatalf("runtime URL = %q, want %q", target.RuntimeAssetURL, wantURL)
+	}
+	if err := validateLock(updated, "release"); err != nil {
+		t.Fatalf("updated lock should be release-ready: %v", err)
+	}
+}
+
 func TestReadLockRejectsDuplicateTargets(t *testing.T) {
 	lock := fixtureLock()
 	lock.Targets = append(lock.Targets, lock.Targets[0])
@@ -89,7 +153,7 @@ func fixtureLock() runtimeLock {
 				SourceArchiveSHA256:  "source-sha",
 				SourceLibraryPath:    "lib/libonnxruntime.dylib",
 				RuntimeAssetName:     "thr-onnxruntime_1.25.1_darwin_arm64.tar.gz",
-				RuntimeAssetURL:      "https://example.com/runtime.tgz",
+				RuntimeAssetURL:      "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_darwin_arm64.tar.gz",
 				RuntimeArchiveSHA256: "archive-sha",
 				RuntimeLibraryPath:   "lib/libonnxruntime.dylib",
 				RuntimeLibrarySHA256: "lib-sha",
@@ -107,7 +171,7 @@ func fixtureLock() runtimeLock {
 				SourceTag:            "v1.25.1",
 				SourceLibraryPath:    "build/MacOS/Release/libonnxruntime.dylib",
 				RuntimeAssetName:     "thr-onnxruntime_1.25.1_darwin_amd64.tar.gz",
-				RuntimeAssetURL:      "https://example.com/runtime-amd64.tgz",
+				RuntimeAssetURL:      "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_darwin_amd64.tar.gz",
 				RuntimeArchiveSHA256: "archive-sha",
 				RuntimeLibraryPath:   "lib/libonnxruntime.dylib",
 				RuntimeLibrarySHA256: "lib-sha",
@@ -125,7 +189,7 @@ func fixtureLock() runtimeLock {
 				SourceArchiveSHA256:  "source-sha",
 				SourceLibraryPath:    "lib/libonnxruntime.so",
 				RuntimeAssetName:     "thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
-				RuntimeAssetURL:      "https://example.com/runtime-linux.tgz",
+				RuntimeAssetURL:      "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
 				RuntimeArchiveSHA256: "archive-sha",
 				RuntimeLibraryPath:   "lib/libonnxruntime.so",
 				RuntimeLibrarySHA256: "lib-sha",
@@ -143,7 +207,7 @@ func fixtureLock() runtimeLock {
 				SourceArchiveSHA256:  "source-sha",
 				SourceLibraryPath:    "lib/libonnxruntime.so",
 				RuntimeAssetName:     "thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
-				RuntimeAssetURL:      "https://example.com/runtime-linux-arm64.tgz",
+				RuntimeAssetURL:      "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
 				RuntimeArchiveSHA256: "archive-sha",
 				RuntimeLibraryPath:   "lib/libonnxruntime.so",
 				RuntimeLibrarySHA256: "lib-sha",
