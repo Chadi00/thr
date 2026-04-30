@@ -65,6 +65,7 @@
       "source_library_path": "lib/libonnxruntime.so",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
       "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_amd64.tar.gz",
+      "runtime_archive_sha256": "455732f89c5ee8df7d50afc1bdb9521ef21815eba042dc30451c713cc5a3e92f",
       "runtime_library_path": "lib/libonnxruntime.so",
       "runtime_library_sha256": "7a7c63fec274e9577477a0158a03a205e3ed9320b032a2df2b2a01b6ae1d3b94",
       "license_files": [
@@ -86,6 +87,7 @@
       "source_library_path": "lib/libonnxruntime.so",
       "runtime_asset_name": "thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
       "runtime_asset_url": "https://github.com/Chadi00/thr/releases/download/thr-native-onnxruntime-v1.25.1/thr-onnxruntime_1.25.1_linux_arm64.tar.gz",
+      "runtime_archive_sha256": "92d342f521088ff2230408e184a2377fc2f9a5a98d38ef421533c5a37a16b77d",
       "runtime_library_path": "lib/libonnxruntime.so",
       "runtime_library_sha256": "e34095ad2791f1f05ed17324ede7873b4fdb4c136b3ba3f1dd5093d2e76d4192",
       "license_files": [
