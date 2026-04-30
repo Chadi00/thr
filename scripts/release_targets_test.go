@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -43,6 +44,24 @@ func TestReadLockRejectsDuplicateTargets(t *testing.T) {
 
 	if _, err := readLock(path); err == nil {
 		t.Fatal("expected duplicate targets to fail validation")
+	}
+}
+
+func TestONNXRuntimeVersionConsistency(t *testing.T) {
+	lock, err := readLock(filepath.Join("..", "native", "onnxruntime.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := map[string]string{
+		"install.sh":                    extractVersion(t, filepath.Join("..", "install.sh"), `(?m)^THR_ONNXRUNTIME_VERSION="([^"]+)"`),
+		"scripts/package_release.sh":    extractVersion(t, "package_release.sh", `(?m)^ONNXRUNTIME_VERSION="([^"]+)"`),
+		"internal/embed/onnxruntime.go": extractVersion(t, filepath.Join("..", "internal", "embed", "onnxruntime.go"), `ONNXRuntimeVersion\s*=\s*"([^"]+)"`),
+	}
+	for name, got := range checks {
+		if got != lock.ONNXRuntimeVersion {
+			t.Fatalf("%s ONNX Runtime version = %q, want lock version %q", name, got, lock.ONNXRuntimeVersion)
+		}
 	}
 }
 
@@ -112,4 +131,18 @@ func writeLock(t *testing.T, lock runtimeLock) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func extractVersion(t *testing.T, path string, pattern string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := regexp.MustCompile(pattern).FindSubmatch(data)
+	if len(matches) != 2 {
+		t.Fatalf("could not find version in %s", path)
+	}
+	return string(matches[1])
 }

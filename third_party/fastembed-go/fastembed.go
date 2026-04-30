@@ -2,18 +2,13 @@ package fastembed
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"math"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 
-	"github.com/schollz/progressbar/v3"
 	"github.com/sugarme/tokenizer"
 	"github.com/sugarme/tokenizer/pretrained"
 	ort "github.com/yalue/onnxruntime_go"
@@ -441,128 +436,21 @@ func getModelInfo(model EmbeddingModel) (ModelInfo, error) {
 	return ModelInfo{}, fmt.Errorf("model %s not found", model)
 }
 
-// Private function to retrieve the model from the cache or download it
+// Private function to retrieve the model from the cache.
 // Returns the path to the model.
-func retrieveModel(model EmbeddingModel, cacheDir string, showDownloadProgress bool) (string, error) {
-	if _, err := os.Stat(filepath.Join(cacheDir, string(model))); !errors.Is(err, fs.ErrNotExist) {
-		return filepath.Join(cacheDir, string(model)), nil
-	}
-	return downloadFromHuggingFace(model, cacheDir, showDownloadProgress)
-}
-
-// hfModelSource matches upstream fastembed Hugging Face repos (GCS qdrant-fastembed now returns 403).
-type hfModelSource struct {
-	repo           string
-	remoteOnnxName string // filename in repo; always written locally as model_optimized.onnx
-}
-
-func hfSource(model EmbeddingModel) (hfModelSource, error) {
-	switch model {
-	case AllMiniLML6V2:
-		return hfModelSource{repo: "Qdrant/all-MiniLM-L6-v2-onnx", remoteOnnxName: "model.onnx"}, nil
-	case BGEBaseEN:
-		return hfModelSource{repo: "Qdrant/fast-bge-base-en", remoteOnnxName: "model_optimized.onnx"}, nil
-	case BGEBaseENV15:
-		return hfModelSource{repo: "Qdrant/bge-base-en-v1.5-onnx-Q", remoteOnnxName: "model_optimized.onnx"}, nil
-	case BGESmallEN:
-		return hfModelSource{repo: "Qdrant/bge-small-en", remoteOnnxName: "model_optimized.onnx"}, nil
-	case BGESmallENV15:
-		return hfModelSource{repo: "Qdrant/bge-small-en-v1.5-onnx-Q", remoteOnnxName: "model_optimized.onnx"}, nil
-	case BGESmallZH:
-		return hfModelSource{repo: "Qdrant/bge-small-zh-v1.5", remoteOnnxName: "model_optimized.onnx"}, nil
-	default:
-		return hfModelSource{}, fmt.Errorf("no Hugging Face source for model %s", model)
-	}
-}
-
-var hfTokenizerFiles = []string{
-	"tokenizer.json",
-	"config.json",
-	"tokenizer_config.json",
-	"special_tokens_map.json",
-	"vocab.txt",
-}
-
-func huggingFaceResolveURL(repo, p string) string {
-	return fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", repo, p)
-}
-
-func downloadFromHuggingFace(model EmbeddingModel, cacheDir string, showDownloadProgress bool) (string, error) {
-	spec, err := hfSource(model)
+func retrieveModel(model EmbeddingModel, cacheDir string, _ bool) (string, error) {
+	modelPath := filepath.Join(cacheDir, string(model))
+	info, err := os.Stat(modelPath)
 	if err != nil {
-		return "", err
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("model cache not found at %s; prepare the verified bundled model before initializing fastembed", modelPath)
+		}
+		return "", fmt.Errorf("stat model cache %s: %w", modelPath, err)
 	}
-	destDir := filepath.Join(cacheDir, string(model))
-	partDir := destDir + ".partial"
-	_ = os.RemoveAll(partDir)
-	if err := os.MkdirAll(partDir, 0o755); err != nil {
-		return "", err
+	if !info.IsDir() {
+		return "", fmt.Errorf("model cache path is not a directory: %s", modelPath)
 	}
-
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.RemoveAll(partDir)
-		}
-	}()
-
-	client := &http.Client{}
-	const ua = "fastembed-go (https://github.com/bdombro/fastembed-go)"
-
-	downloadBlob := func(relPath, destName string, progressLabel string, useBar bool) error {
-		u := huggingFaceResolveURL(spec.repo, relPath)
-		req, err := http.NewRequest(http.MethodGet, u, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("User-Agent", ua)
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return fmt.Errorf("download %s: %s", relPath, resp.Status)
-		}
-		outPath := filepath.Join(partDir, destName)
-		f, err := os.Create(outPath)
-		if err != nil {
-			return err
-		}
-		var body io.Reader = resp.Body
-		if useBar && showDownloadProgress && resp.ContentLength > 0 {
-			bar := progressbar.DefaultBytes(resp.ContentLength, progressLabel)
-			pr := progressbar.NewReader(resp.Body, bar)
-			body = &pr
-		} else if useBar && showDownloadProgress {
-			bar := progressbar.DefaultBytes(-1, progressLabel)
-			pr := progressbar.NewReader(resp.Body, bar)
-			body = &pr
-		}
-		_, err = io.Copy(f, body)
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		return closeErr
-	}
-
-	for _, name := range hfTokenizerFiles {
-		if err := downloadBlob(name, name, "", false); err != nil {
-			return "", err
-		}
-	}
-
-	onnxLabel := "Downloading " + string(model) + " (onnx)"
-	if err := downloadBlob(spec.remoteOnnxName, "model_optimized.onnx", onnxLabel, true); err != nil {
-		return "", err
-	}
-
-	if err := os.Rename(partDir, destDir); err != nil {
-		return "", err
-	}
-	cleanup = false
-	return destDir, nil
+	return modelPath, nil
 }
 
 // Private function to normalize a vector
