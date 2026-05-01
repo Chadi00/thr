@@ -174,7 +174,6 @@ assert_agent_skill_prompt_skipped() {
 
   for path in \
     "$HOME/.claude/skills/thr/SKILL.md" \
-    "$HOME/.config/opencode/skills/thr/SKILL.md" \
     "$HOME/.agents/skills/thr/SKILL.md"; do
     if [[ -e "$path" ]]; then
       fail "optional agent skill setup should be skipped in smoke test, but found $path"

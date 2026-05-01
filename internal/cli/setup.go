@@ -14,11 +14,9 @@ import (
 const thrSkillManagedMarker = "<!-- thr:managed-skill:v1 -->"
 
 type setupTarget struct {
-	name                    string
-	displayName             string
-	relativeSkillPath       []string
-	opencodeCompatiblePaths [][]string
-	codexUserSkill          bool
+	name              string
+	displayName       string
+	relativeSkillPath []string
 }
 
 type setupStatus string
@@ -27,7 +25,6 @@ const (
 	setupStatusInstalled setupStatus = "installed"
 	setupStatusUpdated   setupStatus = "updated"
 	setupStatusCurrent   setupStatus = "current"
-	setupStatusSkipped   setupStatus = "skipped"
 )
 
 type setupResult struct {
@@ -51,16 +48,12 @@ func newSetupCommand() *cobra.Command {
 		newSetupTargetCommand(setupTarget{
 			name:              "opencode",
 			displayName:       "OpenCode",
-			relativeSkillPath: []string{".config", "opencode", "skills", "thr", "SKILL.md"},
-			opencodeCompatiblePaths: [][]string{
-				{".claude", "skills", "thr", "SKILL.md"},
-				{".agents", "skills", "thr", "SKILL.md"},
-			},
+			relativeSkillPath: []string{".agents", "skills", "thr", "SKILL.md"},
 		}),
 		newSetupTargetCommand(setupTarget{
-			name:           "codex",
-			displayName:    "Codex",
-			codexUserSkill: true,
+			name:              "codex",
+			displayName:       "Codex",
+			relativeSkillPath: []string{".agents", "skills", "thr", "SKILL.md"},
 		}),
 	)
 
@@ -95,22 +88,6 @@ func installSetupTarget(target setupTarget, force bool) (setupResult, error) {
 	}
 
 	targetPath := setupTargetPath(homeDir, target)
-	if target.name == "opencode" {
-		if exists, err := pathExists(targetPath); err != nil {
-			return setupResult{}, err
-		} else if !exists {
-			for _, relativePath := range target.opencodeCompatiblePaths {
-				compatiblePath := filepath.Join(append([]string{homeDir}, relativePath...)...)
-				managed, err := isManagedSkillFile(compatiblePath)
-				if err != nil {
-					return setupResult{}, err
-				}
-				if managed {
-					return setupResult{status: setupStatusSkipped, path: compatiblePath}, nil
-				}
-			}
-		}
-	}
 
 	status, err := installSkillFile(targetPath, []byte(agentSkills.ThrSkill), force)
 	if err != nil {
@@ -120,13 +97,6 @@ func installSetupTarget(target setupTarget, force bool) (setupResult, error) {
 }
 
 func setupTargetPath(homeDir string, target setupTarget) string {
-	if target.codexUserSkill {
-		codexHome := os.Getenv("CODEX_HOME")
-		if codexHome == "" {
-			codexHome = filepath.Join(homeDir, ".codex")
-		}
-		return filepath.Join(codexHome, "skills", "thr", "SKILL.md")
-	}
 	return filepath.Join(append([]string{homeDir}, target.relativeSkillPath...)...)
 }
 
@@ -138,8 +108,6 @@ func printSetupResult(cmd *cobra.Command, target setupTarget, result setupResult
 		fmt.Fprintf(cmd.OutOrStdout(), "updated thr skill for %s at %s\n", target.displayName, result.path)
 	case setupStatusCurrent:
 		fmt.Fprintf(cmd.OutOrStdout(), "thr skill already installed for %s at %s\n", target.displayName, result.path)
-	case setupStatusSkipped:
-		fmt.Fprintf(cmd.OutOrStdout(), "%s already discovers the managed thr skill at %s; no OpenCode-specific install needed\n", target.displayName, result.path)
 	}
 }
 
@@ -219,32 +187,4 @@ func writeFileAtomic(path string, content []byte) error {
 		return fmt.Errorf("harden skill %s: %w", path, err)
 	}
 	return nil
-}
-
-func pathExists(path string) (bool, error) {
-	if _, err := os.Lstat(path); err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("inspect path %s: %w", path, err)
-	}
-	return true, nil
-}
-
-func isManagedSkillFile(path string) (bool, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("inspect compatible skill %s: %w", path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return false, nil
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return false, fmt.Errorf("read compatible skill %s: %w", path, err)
-	}
-	return bytes.Contains(content, []byte(thrSkillManagedMarker)), nil
 }

@@ -23,12 +23,12 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 		{
 			command:      "opencode",
 			displayName:  "OpenCode",
-			relativePath: []string{".config", "opencode", "skills", "thr", "SKILL.md"},
+			relativePath: []string{".agents", "skills", "thr", "SKILL.md"},
 		},
 		{
 			command:      "codex",
 			displayName:  "Codex",
-			relativePath: []string{".codex", "skills", "thr", "SKILL.md"},
+			relativePath: []string{".agents", "skills", "thr", "SKILL.md"},
 		},
 	}
 
@@ -47,7 +47,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 			content := readFileString(t, path)
 			for _, want := range []string{
 				"name: thr",
-				"description: Use thr whenever the task involves durable memory in any way",
+				"description: Use thr for durable memory across coding sessions",
 				thrSkillManagedMarker,
 				"thr ask --json",
 				"thr search --json",
@@ -67,7 +67,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 
 func TestSetupCommandIsIdempotent(t *testing.T) {
 	home := setupTempHome(t)
-	path := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 
 	runRootCommand(t, "setup", "codex")
 	output := runRootCommand(t, "setup", "codex")
@@ -80,11 +80,11 @@ func TestSetupCommandIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSetupCodexUsesCODEXHome(t *testing.T) {
+func TestSetupCodexIgnoresCODEXHome(t *testing.T) {
 	home := setupTempHome(t)
 	codexHome := filepath.Join(t.TempDir(), "codex-home")
 	t.Setenv("CODEX_HOME", codexHome)
-	path := filepath.Join(codexHome, "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 
 	output := runRootCommand(t, "setup", "codex")
 
@@ -92,14 +92,14 @@ func TestSetupCodexUsesCODEXHome(t *testing.T) {
 		t.Fatalf("unexpected setup output: %q", output)
 	}
 	if got := readFileString(t, path); got != agentSkills.ThrSkill {
-		t.Fatalf("expected canonical skill content at CODEX_HOME path")
+		t.Fatalf("expected canonical skill content at global agent skill path")
 	}
-	assertPathAbsent(t, filepath.Join(home, ".codex", "skills", "thr", "SKILL.md"))
+	assertPathAbsent(t, filepath.Join(codexHome, "skills", "thr", "SKILL.md"))
 }
 
 func TestSetupCodexRefusesUnmanagedSkillWithoutForce(t *testing.T) {
 	home := setupTempHome(t)
-	path := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 	original := "custom codex skill\n"
 	writeTestFile(t, path, original)
 
@@ -130,7 +130,7 @@ func TestSetupUpdatesManagedSkill(t *testing.T) {
 
 func TestSetupRefusesUnmanagedSkillWithoutForce(t *testing.T) {
 	home := setupTempHome(t)
-	path := filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 	original := "custom user skill\n"
 	writeTestFile(t, path, original)
 
@@ -146,7 +146,7 @@ func TestSetupRefusesUnmanagedSkillWithoutForce(t *testing.T) {
 
 func TestSetupForceReplacesUnmanagedSkill(t *testing.T) {
 	home := setupTempHome(t)
-	path := filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 	writeTestFile(t, path, "custom user skill\n")
 
 	runRootCommand(t, "setup", "opencode", "--force")
@@ -156,18 +156,18 @@ func TestSetupForceReplacesUnmanagedSkill(t *testing.T) {
 	}
 }
 
-func TestSetupOpenCodeSkipsWhenCompatibleManagedSkillExists(t *testing.T) {
+func TestSetupOpenCodeAndCodexShareGlobalAgentSkill(t *testing.T) {
 	home := setupTempHome(t)
-	compatiblePath := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
-	opencodePath := filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md")
-	writeTestFile(t, compatiblePath, agentSkills.ThrSkill)
+	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
 
-	output := runRootCommand(t, "setup", "opencode")
+	runRootCommand(t, "setup", "opencode")
+	output := runRootCommand(t, "setup", "codex")
 
-	if !strings.Contains(output, "OpenCode already discovers the managed thr skill at "+compatiblePath) {
-		t.Fatalf("unexpected OpenCode skip output: %q", output)
+	if !strings.Contains(output, "thr skill already installed for Codex at "+path) {
+		t.Fatalf("unexpected shared setup output: %q", output)
 	}
-	assertPathAbsent(t, opencodePath)
+	assertPathAbsent(t, filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md"))
+	assertPathAbsent(t, filepath.Join(home, ".codex", "skills", "thr", "SKILL.md"))
 }
 
 func setupTempHome(t *testing.T) string {

@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `thr setup codex` now installs the managed Agent Skill under `$CODEX_HOME/skills/thr/SKILL.md`, defaulting to `~/.codex/skills/thr/SKILL.md`, so Codex Desktop can discover it.
+- `thr setup opencode` and `thr setup codex` now install the managed Agent Skill under `~/.agents/skills/thr/SKILL.md`, the shared user-level Agent Skills location discovered by both agents.
+- The bundled `thr` skill frontmatter now avoids parser-sensitive YAML punctuation while keeping the portable `name` and `description` metadata required by Agent Skills.
 
 ## [0.1.20] - 2026-04-30
 

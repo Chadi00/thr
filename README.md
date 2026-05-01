@@ -50,6 +50,8 @@ thr setup codex
 
 The skill teaches agents to retrieve durable preferences and project facts with `thr ask` / `thr search`, save explicit non-sensitive memories with `thr add`, and maintain memories with `thr edit` / `thr forget`.
 
+`claude-code` installs to `~/.claude/skills/thr/SKILL.md`. `opencode` and `codex` install to the shared global Agent Skills location at `~/.agents/skills/thr/SKILL.md`.
+
 Other agents that support Agent Skills can install the same [`skills/thr`](skills/thr) directory manually.
 
 ---
