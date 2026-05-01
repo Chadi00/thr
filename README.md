@@ -2,7 +2,7 @@
 
 # thr
 
-thr: local memory for your terminal and coding agents. Save notes for yourself or your AI agent, search them by text or meaning, and keep everything local.
+local memory for your terminal and coding agents. Save notes for yourself or your AI agent, search them by text or meaning, and keep everything local.
 
 [![Latest release](https://img.shields.io/github/v/release/Chadi00/thr?style=flat-square&logo=github)](https://github.com/Chadi00/thr/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
