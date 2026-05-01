@@ -18,6 +18,7 @@ type setupTarget struct {
 	displayName             string
 	relativeSkillPath       []string
 	opencodeCompatiblePaths [][]string
+	codexUserSkill          bool
 }
 
 type setupStatus string
@@ -57,9 +58,9 @@ func newSetupCommand() *cobra.Command {
 			},
 		}),
 		newSetupTargetCommand(setupTarget{
-			name:              "codex",
-			displayName:       "Codex",
-			relativeSkillPath: []string{".agents", "skills", "thr", "SKILL.md"},
+			name:           "codex",
+			displayName:    "Codex",
+			codexUserSkill: true,
 		}),
 	)
 
@@ -93,7 +94,7 @@ func installSetupTarget(target setupTarget, force bool) (setupResult, error) {
 		return setupResult{}, fmt.Errorf("resolve home dir: %w", err)
 	}
 
-	targetPath := filepath.Join(append([]string{homeDir}, target.relativeSkillPath...)...)
+	targetPath := setupTargetPath(homeDir, target)
 	if target.name == "opencode" {
 		if exists, err := pathExists(targetPath); err != nil {
 			return setupResult{}, err
@@ -116,6 +117,17 @@ func installSetupTarget(target setupTarget, force bool) (setupResult, error) {
 		return setupResult{}, err
 	}
 	return setupResult{status: status, path: targetPath}, nil
+}
+
+func setupTargetPath(homeDir string, target setupTarget) string {
+	if target.codexUserSkill {
+		codexHome := os.Getenv("CODEX_HOME")
+		if codexHome == "" {
+			codexHome = filepath.Join(homeDir, ".codex")
+		}
+		return filepath.Join(codexHome, "skills", "thr", "SKILL.md")
+	}
+	return filepath.Join(append([]string{homeDir}, target.relativeSkillPath...)...)
 }
 
 func printSetupResult(cmd *cobra.Command, target setupTarget, result setupResult) {

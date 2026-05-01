@@ -2,7 +2,7 @@
 
 # thr
 
-A tiny local memory store for the terminal: save notes for yourself or your AI agent, search them by text or meaning, and keep everything local.
+thr: local memory for your terminal and coding agents. Save notes for yourself or your AI agent, search them by text or meaning, and keep everything local.
 
 [![Latest release](https://img.shields.io/github/v/release/Chadi00/thr?style=flat-square&logo=github)](https://github.com/Chadi00/thr/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
@@ -18,6 +18,8 @@ For macOS and Linux, use:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
+
+The installer downloads a signed, self-contained release archive of about 210 MB so semantic search works without a separate model or runtime install.
 
 ---
 
@@ -100,6 +102,12 @@ Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for release history by version.
+
+---
+
+## License
+
+`thr` is released under the [MIT License](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled model, vendored library, and packaged runtime notices.
 
 ---
 

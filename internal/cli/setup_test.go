@@ -28,7 +28,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 		{
 			command:      "codex",
 			displayName:  "Codex",
-			relativePath: []string{".agents", "skills", "thr", "SKILL.md"},
+			relativePath: []string{".codex", "skills", "thr", "SKILL.md"},
 		},
 	}
 
@@ -67,7 +67,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 
 func TestSetupCommandIsIdempotent(t *testing.T) {
 	home := setupTempHome(t)
-	path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
+	path := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
 
 	runRootCommand(t, "setup", "codex")
 	output := runRootCommand(t, "setup", "codex")
@@ -77,6 +77,39 @@ func TestSetupCommandIsIdempotent(t *testing.T) {
 	}
 	if got := readFileString(t, path); got != agentSkills.ThrSkill {
 		t.Fatalf("expected canonical skill content after idempotent setup")
+	}
+}
+
+func TestSetupCodexUsesCODEXHome(t *testing.T) {
+	home := setupTempHome(t)
+	codexHome := filepath.Join(t.TempDir(), "codex-home")
+	t.Setenv("CODEX_HOME", codexHome)
+	path := filepath.Join(codexHome, "skills", "thr", "SKILL.md")
+
+	output := runRootCommand(t, "setup", "codex")
+
+	if !strings.Contains(output, "installed thr skill for Codex at "+path) {
+		t.Fatalf("unexpected setup output: %q", output)
+	}
+	if got := readFileString(t, path); got != agentSkills.ThrSkill {
+		t.Fatalf("expected canonical skill content at CODEX_HOME path")
+	}
+	assertPathAbsent(t, filepath.Join(home, ".codex", "skills", "thr", "SKILL.md"))
+}
+
+func TestSetupCodexRefusesUnmanagedSkillWithoutForce(t *testing.T) {
+	home := setupTempHome(t)
+	path := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
+	original := "custom codex skill\n"
+	writeTestFile(t, path, original)
+
+	err := executeRootCommand("setup", "codex")
+
+	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite existing unmanaged skill") {
+		t.Fatalf("expected unmanaged overwrite refusal, got %v", err)
+	}
+	if got := readFileString(t, path); got != original {
+		t.Fatalf("expected unmanaged skill to be preserved, got %q", got)
 	}
 }
 
@@ -141,6 +174,7 @@ func setupTempHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
 	return home
 }
 

@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.21] - 2026-05-01
+
+### Added
+
+- Added a root MIT license and third-party notices for bundled model assets, vendored libraries, and packaged runtime files.
+
+### Changed
+
+- Updated launch-facing README copy to position `thr` as local memory for terminals and coding agents, with an upfront note about the self-contained release archive size.
+
+### Fixed
+
+- `thr setup codex` now installs the managed Agent Skill under `$CODEX_HOME/skills/thr/SKILL.md`, defaulting to `~/.codex/skills/thr/SKILL.md`, so Codex Desktop can discover it.
+
 ## [0.1.20] - 2026-04-30
 
 ### Changed
