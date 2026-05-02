@@ -19,6 +19,8 @@ thr setup codex
 
 `thr` is a small local CLI memory layer for agent workflows: explicit memories, keyword and semantic recall, stable JSON output, and installable Agent Skills for Claude Code, OpenCode, and Codex.
 
+![thr semantic memory demo](docs/demo/show-hn.gif)
+
 ---
 
 ## Install
