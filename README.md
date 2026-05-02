@@ -1,13 +1,23 @@
 <div align="center">
 
-# thr
+# thr: local semantic memory for your terminal and coding agents
 
-local memory for your terminal and coding agents. Save notes for yourself or your AI agent, search them by text or meaning, and keep everything local.
+Save durable facts once. Recall them from your shell, scripts, or coding agents without a cloud service.
 
 [![Latest release](https://img.shields.io/github/v/release/Chadi00/thr?style=flat-square&logo=github)](https://github.com/Chadi00/thr/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-31363b?style=flat-square)](https://github.com/Chadi00/thr#platform-support)
 
 </div>
+
+---
+
+```bash
+thr add "This project prefers small PRs with tests"
+thr ask "how should I structure this PR?"
+thr setup codex
+```
+
+`thr` is a small local CLI memory layer for agent workflows: explicit memories, keyword and semantic recall, stable JSON output, and installable Agent Skills for Claude Code, OpenCode, and Codex.
 
 ---
 
@@ -19,7 +29,13 @@ For macOS and Linux, use:
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-The installer downloads a signed, self-contained release archive of about 210 MB so semantic search works without a separate model or runtime install.
+The installer downloads a signed, self-contained release archive and verifies its signed checksums before installing.
+
+Prefer not to run `curl | bash`? Use the [manual verified install guide](MANUAL_INSTALL.md).
+
+### Why is it 210 MB?
+
+The archive is large because `thr` bundles the embedding model and ONNX Runtime so semantic search works offline with no Python, Node, Docker, server, cloud API, or separate model install.
 
 ---
 
@@ -28,15 +44,32 @@ The installer downloads a signed, self-contained release archive of about 210 MB
 After install, try:
 
 ```bash
-thr add "prefers small CLIs with good docs"
+thr add "This project prefers small PRs with tests"
 thr list
-thr ask "what are their CLI preferences?"
-thr search "cli docs"
+thr ask "how should I structure this PR?"
+thr search "small PRs"
 ```
 
 Full help: `thr --help` and `thr <command> --help`.
 
 **Scripts and agents:** add `--json` to `list`, `show`, `ask`, `search`, or `stats` for stable output. Multiline input: `printf "a\nb\n" | thr add -` or `thr edit 1 -`.
+
+### Agent memory workflow
+
+Save project conventions once:
+
+```bash
+thr add "This project prefers small PRs with tests"
+thr add "Use the existing Cobra command style when adding CLI features"
+```
+
+Then install the Agent Skill:
+
+```bash
+thr setup codex
+```
+
+In a later session, your coding agent can retrieve those conventions before editing code with `thr ask --json "how should I work in this repo?"` or `thr search --json "Cobra command style"`.
 
 ### Agent setup
 
@@ -53,6 +86,24 @@ The skill teaches agents to retrieve durable preferences and project facts with 
 `claude-code` installs to `~/.claude/skills/thr/SKILL.md`. `opencode` and `codex` install to the shared global Agent Skills location at `~/.agents/skills/thr/SKILL.md`.
 
 Other agents that support Agent Skills can install the same [`skills/thr`](skills/thr) directory manually.
+
+---
+
+## Why not just use notes.md?
+
+Use `notes.md` if you want a file you read and edit yourself. `thr` is for agent-readable memory: stable JSON output, ids for edit/delete/list, keyword search, semantic recall, a local embedding index, and installable Agent Skills that teach coding agents how to retrieve and maintain explicit project facts.
+
+---
+
+## Why not use Mem0?
+
+Mem0 is a broader memory platform with hosted and application-integration use cases. `thr` is intentionally smaller: a local CLI for explicit, plaintext, offline agent memory that works from a terminal, shell script, or coding-agent skill without running a service or sending memories to a cloud API.
+
+---
+
+## What thr is not
+
+`thr` is not a cloud memory service, an LLM, a vector database server, or automatic surveillance memory. It only stores what you explicitly save with commands like `thr add`, and `thr ask` retrieves matching memories rather than generating an answer.
 
 ---
 
@@ -79,17 +130,17 @@ Other agents that support Agent Skills can install the same [`skills/thr`](skill
 
 ## Where data lives
 
-| | Default |
-|--|--------|
-| Database | `~/.thr/thr.db` |
-| Embedding cache | `~/.thr/models` (`THR_MODEL_CACHE` overrides) |
+| Data | Default |
+|------|---------|
+| Memories database | `~/.thr/thr.db` |
+| Embedding/model cache | `~/.thr/models` (`THR_MODEL_CACHE` overrides) |
 | Install prefix | `~/.local` (`THR_INSTALL_PREFIX` overrides) |
 
-thr stores memories as local plaintext in SQLite and hardens the default data and model-cache paths with private filesystem permissions.
+`thr` stores memories as local plaintext SQLite and hardens the default data and model-cache paths with private filesystem permissions. It is not encrypted at rest.
 
-Semantic search uses a bundled embedding model cached under `~/.thr/models`. `thr prefetch` prepares that cache ahead of time, and `thr index` rebuilds embeddings if needed.
+Semantic search uses the bundled embedding model cached under `~/.thr/models`. The model cache and embeddings stay local. `thr prefetch` prepares that cache ahead of time, and `thr index` rebuilds embeddings if needed.
 
-Use the numeric **id** from `thr list` (or from `ask` / `search`) with `show`, `edit`, and `forget`.
+`thr` has no telemetry. The installer downloads release assets from GitHub Releases, verifies signed checksums, and installs the binary plus packaged runtime files.
 
 ---
 
@@ -118,3 +169,11 @@ See [CHANGELOG.md](CHANGELOG.md) for release history by version.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/uninstall.sh | bash
 ```
+
+---
+
+## Contributing
+
+`thr` is early and I’m not accepting external code contributions yet while the core design is still changing.
+
+Issues, bug reports, use cases, and design feedback are very welcome. If you’re interested in contributing code later, please open an issue first so we can discuss whether it fits the direction of the project.
