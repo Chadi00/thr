@@ -241,6 +241,10 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.version }}
           target_commitish: ${{ needs.prepare.outputs.commit }}
           generate_release_notes: true
+          body: |
+            ## Scope migration notice
+
+            Upgrading automatically backs up and migrates the selected default database, assigning existing memories to the user scope with legacy provenance. Custom databases migrate on first operational access. Scoped databases are not readable by older binaries; downgrade by restoring the reported pre-migration backup.
           files: |
             dist/thr_*.tar.gz
             dist/checksums.txt

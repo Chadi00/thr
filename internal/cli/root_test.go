@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Chadi00/thr/internal/repoctx"
 	"github.com/Chadi00/thr/internal/store"
 )
 
@@ -82,8 +84,9 @@ func TestListCountFlagsLimitNewestMemories(t *testing.T) {
 	base := time.Now().UTC().UnixMilli()
 	for i := 1; i <= 5; i++ {
 		if _, err := db.Exec(
-			`INSERT INTO memories (text, created_at, updated_at) VALUES (?, ?, ?)`,
+			`INSERT INTO scoped_memories (text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES (?, 'user', 'explicit', ?, ?, ?)`,
 			fmt.Sprintf("memory %d", i),
+			base+int64(i),
 			base+int64(i),
 			base+int64(i),
 		); err != nil {
@@ -200,6 +203,263 @@ func TestAskRejectsInvalidMaxDistanceBeforeRuntimeInit(t *testing.T) {
 	assertPathAbsent(t, modelCache)
 }
 
+func TestContextProspectiveRepositoryIsReadOnly(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	repo := filepath.Join(t.TempDir(), "repo")
+	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	output := runRootCommand(t, "--db", dbPath, "--cwd", repo, "--format", "json-v2", "context")
+	var envelope struct {
+		Context struct {
+			Database struct {
+				Status string `json:"status"`
+			} `json:"database"`
+			Prospective *struct {
+				ID *string `json:"id"`
+			} `json:"prospective_scope"`
+			Resolution struct {
+				Status string `json:"status"`
+			} `json:"resolution"`
+		} `json:"context"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Context.Database.Status != "missing" || envelope.Context.Prospective == nil || envelope.Context.Prospective.ID != nil || envelope.Context.Resolution.Status != "prospective" {
+		t.Fatalf("unexpected context: %s", output)
+	}
+	assertPathAbsent(t, dbPath)
+}
+
+func TestContextDoesNotChangeCurrentDatabaseFiles(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRootCommand(t, "--db", dbPath, "--cwd", dir, "context")
+	after, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != len(after) || !info.ModTime().Equal(afterInfo.ModTime()) || info.Mode() != afterInfo.Mode() {
+		t.Fatalf("context changed database files: before=%v after=%v", before, after)
+	}
+}
+
+func TestUnqualifiedWriteOutsideRepositoryHasNoSideEffects(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+	err := executeRootCommand("--db", dbPath, "--cwd", t.TempDir(), "add", "repository fact")
+	if err == nil || !strings.Contains(err.Error(), "--scope user") {
+		t.Fatalf("expected unresolved write scope, got %v", err)
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
+func TestEmptyJSONV2RecallReportsSearchedScope(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	output := runRootCommand(t, "--db", dbPath, "--cwd", t.TempDir(), "--format", "json-v2", "list", "--scope", "user")
+	var envelope struct {
+		Context struct {
+			Selection struct {
+				Resolved []string `json:"resolved"`
+			} `json:"scope_selection"`
+		} `json:"context"`
+		Result struct {
+			Memories []any `json:"memories"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Context.Selection.Resolved) != 1 || envelope.Context.Selection.Resolved[0] != "user" || envelope.Result.Memories == nil || len(envelope.Result.Memories) != 0 {
+		t.Fatalf("unexpected empty v2 response: %s", output)
+	}
+}
+
+func TestJSONV2ErrorIdentifiesOperationAndSelection(t *testing.T) {
+	root := NewRootCommand("v1", "commit", "date")
+	root.SetArgs([]string{"--db", filepath.Join(t.TempDir(), "missing.db"), "--cwd", t.TempDir(), "--format", "json-v2", "add", "repo fact"})
+	executed, err := root.ExecuteContextC(context.Background())
+	if err == nil {
+		t.Fatal("expected write scope error")
+	}
+	buf := new(bytes.Buffer)
+	if !PrintError(executed, err, buf) {
+		t.Fatal("expected JSON-v2 error output")
+	}
+	var envelope struct {
+		Command string `json:"command"`
+		Context struct {
+			Selection struct {
+				Mode     string   `json:"mode"`
+				Resolved []string `json:"resolved"`
+			} `json:"scope_selection"`
+		} `json:"context"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Command != "memory.add" || envelope.Error.Code != "write_scope_unresolved" || envelope.Context.Selection.Mode != "automatic_write" || envelope.Context.Selection.Resolved == nil {
+		t.Fatalf("unexpected error envelope: %s", buf.String())
+	}
+}
+
+func TestJSONV2ErrorKeepsResolvedScopes(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO scoped_memories(text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES ('missing index', 'user', 'explicit', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	root := NewRootCommand("v1", "commit", "date")
+	root.SetArgs([]string{"--db", dbPath, "--cwd", t.TempDir(), "--format", "json-v2", "ask", "missing"})
+	executed, err := root.ExecuteContextC(context.Background())
+	if err == nil {
+		t.Fatal("expected stale index error")
+	}
+	buf := new(bytes.Buffer)
+	PrintError(executed, err, buf)
+	var envelope struct {
+		Context struct {
+			Selection struct {
+				Resolved []string `json:"resolved"`
+			} `json:"scope_selection"`
+		} `json:"context"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Error.Code != "index_stale" || len(envelope.Context.Selection.Resolved) != 1 || envelope.Context.Selection.Resolved[0] != "user" {
+		t.Fatalf("resolved scopes lost from error: %s", buf.String())
+	}
+}
+
+func TestExactShowBypassesRepositoryResolution(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO scoped_memories(id, text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES (42, 'exact memory', 'user', 'explicit', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output := runRootCommand(t, "--db", dbPath, "--cwd", filepath.Join(t.TempDir(), "missing"), "show", "42")
+	if !strings.Contains(output, "exact memory") || !strings.Contains(output, "[user]") {
+		t.Fatalf("unexpected exact show output: %q", output)
+	}
+}
+
+func TestScopeFlagMatrixRejectsInvalidCombinations(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"add repeated scope", []string{"--db", dbPath, "add", "--scope", "user", "--scope", "repo", "x"}, "exactly one --scope"},
+		{"read scope and all", []string{"--db", dbPath, "list", "--scope", "user", "--all-scopes"}, "mutually exclusive"},
+		{"show retrieval scope", []string{"--db", dbPath, "show", "--scope", "user", "1"}, "unknown flag"},
+		{"scope independent", []string{"--db", dbPath, "prefetch", "--scope", "user"}, "unknown flag"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := executeRootCommand(test.args...)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+	assertPathAbsent(t, dbPath)
+}
+
+func TestDefaultRepositoryListIncludesRepoAndUserOnly(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	root := filepath.Join(t.TempDir(), "repo")
+	if output, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	observation, err := repoctx.Observe(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	repository := store.NewRepository(db)
+	repoScope, err := repository.EnsureRepositoryScope(context.Background(), observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherScope, err := repository.EnsureRepositoryScope(context.Background(), repoctx.Observation{CommonDir: "/tmp/unrelated/.git", Label: "unrelated"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct{ text, scope string }{{"repo memory", repoScope.ID}, {"user memory", "user"}, {"other memory", otherScope.ID}} {
+		if _, err := db.Exec(`INSERT INTO scoped_memories(text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES (?, ?, 'explicit', 1, 1, 1)`, row.text, row.scope); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output := runRootCommand(t, "--db", dbPath, "--cwd", root, "list")
+	if !strings.Contains(output, "repo memory") || !strings.Contains(output, "user memory") || strings.Contains(output, "other memory") {
+		t.Fatalf("default visibility was not repo + user: %q", output)
+	}
+}
+
 func assertPathAbsent(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -219,8 +479,9 @@ func TestListOnReadOnlyDatabase(t *testing.T) {
 
 	now := time.Now().UTC().UnixMilli()
 	if _, err := db.Exec(
-		`INSERT INTO memories (text, created_at, updated_at) VALUES (?, ?, ?)`,
+		`INSERT INTO scoped_memories (text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES (?, 'user', 'explicit', ?, ?, ?)`,
 		"read-only memory",
+		now,
 		now,
 		now,
 	); err != nil {

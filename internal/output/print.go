@@ -26,8 +26,20 @@ type Stats struct {
 	MissingEmbeddings   int64  `json:"missing_embeddings"`
 }
 
+type legacyMemory struct {
+	ID        int64
+	Text      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type legacySemanticHit struct {
+	Memory   legacyMemory
+	Distance float64
+}
+
 func PrintMemoryAdded(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "stored memory %d\n", memory.ID)
+	fmt.Fprintf(w, "stored memory %d in %s\n", memory.ID, scopeMarker(memory))
 }
 
 func PrintMemoryList(w io.Writer, memories []domain.Memory) {
@@ -37,23 +49,20 @@ func PrintMemoryList(w io.Writer, memories []domain.Memory) {
 	}
 
 	for _, memory := range memories {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, memory.UpdatedAt.Format(time.RFC3339), truncate(inlineText(memory.Text), 120))
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", memory.ID, scopeMarker(memory), memory.UpdatedAt.Format(time.RFC3339), truncate(inlineText(memory.Text), 120))
 	}
 }
 
 func PrintMemoryListJSON(w io.Writer, memories []domain.Memory) error {
-	if memories == nil {
-		memories = []domain.Memory{}
-	}
-	return encodeJSON(w, memories)
+	return encodeJSON(w, legacyMemories(memories))
 }
 
 func PrintMemory(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, memory.UpdatedAt.Format(time.RFC3339), sanitizeText(memory.Text, true))
+	fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", memory.ID, scopeMarker(memory), memory.UpdatedAt.Format(time.RFC3339), sanitizeText(memory.Text, true))
 }
 
 func PrintMemoryJSON(w io.Writer, memory domain.Memory) error {
-	return encodeJSON(w, memory)
+	return encodeJSON(w, newLegacyMemory(memory))
 }
 
 func PrintSearchResults(w io.Writer, memories []domain.Memory) {
@@ -63,19 +72,16 @@ func PrintSearchResults(w io.Writer, memories []domain.Memory) {
 	}
 
 	for _, memory := range memories {
-		fmt.Fprintf(w, "%d\t%s\n", memory.ID, inlineText(memory.Text))
+		fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, scopeMarker(memory), inlineText(memory.Text))
 	}
 }
 
 func PrintSearchResultsJSON(w io.Writer, memories []domain.Memory) error {
-	if memories == nil {
-		memories = []domain.Memory{}
-	}
-	return encodeJSON(w, memories)
+	return encodeJSON(w, legacyMemories(memories))
 }
 
-func PrintForget(w io.Writer, id int64) {
-	fmt.Fprintf(w, "forgot memory %d\n", id)
+func PrintForget(w io.Writer, memory domain.Memory) {
+	fmt.Fprintf(w, "forgot memory %d from %s\n", memory.ID, scopeMarker(memory))
 }
 
 func PrintSemanticResults(w io.Writer, results []store.SemanticHit, withDistance bool) {
@@ -85,23 +91,24 @@ func PrintSemanticResults(w io.Writer, results []store.SemanticHit, withDistance
 	}
 	for _, result := range results {
 		if withDistance {
-			fmt.Fprintf(w, "%d\t%.6f\t%s\n", result.Memory.ID, result.Distance, inlineText(result.Memory.Text))
+			fmt.Fprintf(w, "%d\t%.6f\t%s\t%s\n", result.Memory.ID, result.Distance, scopeMarker(result.Memory), inlineText(result.Memory.Text))
 			continue
 		}
-		fmt.Fprintf(w, "%d\t%s\n", result.Memory.ID, inlineText(result.Memory.Text))
+		fmt.Fprintf(w, "%d\t%s\t%s\n", result.Memory.ID, scopeMarker(result.Memory), inlineText(result.Memory.Text))
 	}
 }
 
 func PrintSemanticResultsJSON(w io.Writer, results []store.SemanticHit) error {
-	if results == nil {
-		results = []store.SemanticHit{}
+	hits := make([]legacySemanticHit, len(results))
+	for i, result := range results {
+		hits[i] = legacySemanticHit{Memory: newLegacyMemory(result.Memory), Distance: result.Distance}
 	}
-	return encodeJSON(w, results)
+	return encodeJSON(w, hits)
 }
 
 func PrintStats(w io.Writer, stats Stats) {
-	fmt.Fprintf(w, "db_path\t%s\n", stats.DBPath)
-	fmt.Fprintf(w, "model_cache\t%s\n", stats.ModelCache)
+	fmt.Fprintf(w, "db_path\t%s\n", inlineText(stats.DBPath))
+	fmt.Fprintf(w, "model_cache\t%s\n", inlineText(stats.ModelCache))
 	fmt.Fprintf(w, "memories\t%d\n", stats.Memories)
 	fmt.Fprintf(w, "model_id\t%s\n", stats.ModelID)
 	fmt.Fprintf(w, "model_revision\t%s\n", stats.ModelRevision)
@@ -121,6 +128,36 @@ func encodeJSON(w io.Writer, value any) error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(value)
 }
+
+func newLegacyMemory(memory domain.Memory) legacyMemory {
+	return legacyMemory{
+		ID: memory.ID, Text: memory.Text,
+		CreatedAt: memory.CreatedAt, UpdatedAt: memory.UpdatedAt,
+	}
+}
+
+func legacyMemories(memories []domain.Memory) []legacyMemory {
+	result := make([]legacyMemory, len(memories))
+	for i, memory := range memories {
+		result[i] = newLegacyMemory(memory)
+	}
+	return result
+}
+
+func scopeMarker(memory domain.Memory) string {
+	if memory.ScopeAssignment == domain.ScopeAssignmentLegacy {
+		return "[user:legacy]"
+	}
+	if memory.Scope.Kind != domain.ScopeKindRepo && !strings.HasPrefix(memory.Scope.ID, "repo:") {
+		return "[user]"
+	}
+
+	// The full payload is the shortest implementation that is always unambiguous.
+	payload := strings.TrimPrefix(memory.Scope.ID, "repo:")
+	return fmt.Sprintf("[repo:%s/%s]", inlineText(memory.Scope.Label), inlineText(payload))
+}
+
+func SanitizeInline(value string) string { return inlineText(value) }
 
 func truncate(value string, max int) string {
 	if utf8.RuneCountInString(value) <= max {

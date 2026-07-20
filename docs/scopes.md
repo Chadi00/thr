@@ -1,6 +1,6 @@
 # Memory Scopes
 
-Status: proposed feature design
+Status: accepted feature specification
 
 ## Summary
 
@@ -15,7 +15,7 @@ guessing:
 4. Which scope each returned memory came from.
 5. How to correct a memory stored in the wrong scope.
 
-The first version of scopes has two scope kinds:
+The scope model has exactly two scope kinds:
 
 | Scope | Meaning | Example |
 | --- | --- | --- |
@@ -63,7 +63,6 @@ intended to apply
 - Keep human-readable commands concise.
 - Provide a stable machine contract for context and scope metadata.
 - Preserve current memories and IDs during migration.
-- Support future `project` scopes without requiring them in the first release.
 
 ## Non-goals
 
@@ -72,11 +71,9 @@ intended to apply
 - Scopes do not synchronize memories between machines or users.
 - Scopes do not infer whether a statement is true.
 - Scopes do not automatically resolve contradictory memories.
-- Scopes do not replace tags. Tags describe a subject; scopes define
-  applicability.
 - Branches, worktrees, directories, and agent sessions are not durable scope
-  kinds in the first release.
-- Arbitrary nested scope trees are not supported.
+  kinds.
+- Additional scope kinds and nested scope trees are not supported.
 
 ## Core Invariants
 
@@ -174,25 +171,6 @@ Agents use symbolic selectors for the current repository and stable IDs for
 other repositories. Labels are for recognition and may change; they are not
 identity.
 
-### Future Project Scope
-
-A later release may add an explicit `project` scope for a product composed of
-multiple repositories:
-
-```text
-user
-  project:payments-platform
-    repo:payments-api
-    repo:payments-web
-```
-
-In that model, repository recall would search `repo + project + user`.
-
-Projects are intentionally deferred. Inferring projects from a parent folder,
-Git hosting organization, or repository name would create surprising context
-sharing. Project membership must be explicit, and a repository should have at
-most one project parent until a more complex visibility model is justified.
-
 ## Visibility Model
 
 Scope visibility flows from broad to narrow:
@@ -225,7 +203,7 @@ the full database, but they must report per-scope information.
 
 ### Exact Selectors
 
-The initial selectors are:
+The supported selectors are:
 
 | Selector | Meaning |
 | --- | --- |
@@ -253,7 +231,7 @@ thr ask \
 ```
 
 `--all-scopes` searches every registered scope and is mutually exclusive with
-`--scope`. It is intended for administration and exceptional cross-project
+`--scope`. It is intended for administration and exceptional cross-repository
 questions, not normal agent recall.
 
 ### Command and Selector Matrix
@@ -262,12 +240,12 @@ questions, not normal agent recall.
 | --- | --- | --- |
 | `add` | Current repository; unresolved outside a repository | Exactly one `--scope`; no `--all-scopes` |
 | `ask`, `search`, `list` | Visible scopes for the current context | Repeated `--scope` union or `--all-scopes` |
-| `show`, `edit`, `forget` | Exact global memory ID | No retrieval selector; future `--if-scope` is a precondition only |
+| `show`, `edit`, `forget` | Exact global memory ID | No retrieval selector; `--if-scope` is a precondition only |
 | `move` | Invalid without destination | Exactly one `--to`; no `--all-scopes` |
 | `stats`, `index` | All registered scopes, preserving current database-wide behavior | Repeated `--scope` union or `--all-scopes` |
 | `context` | Resolve from `--cwd` or current directory | No scope selector |
-| `scope list` | All registered scopes | Management filters may be added later |
-| `migrate` | Explicitly upgrades an older database after creating a verified backup | Scope-independent; scope flags are rejected |
+| `scope list` | All registered scopes | No selectors |
+| `migrate` | Explicitly runs the same verified migration used by automatic operational access | Scope-independent; scope flags are rejected |
 | `prefetch`, `setup`, `version` | Scope-independent | Scope flags are rejected |
 
 `stats` against a missing database succeeds with zero persisted scopes and
@@ -511,7 +489,7 @@ Database and repository resolution use separate state enums:
 | --- | --- |
 | `missing` | The selected database does not exist; context remains read-only. |
 | `compatible` | The database can be inspected by this binary without mutation. |
-| `migration_required` | The database requires an explicit backed-up upgrade. |
+| `migration_required` | Read-only context inspection found a database that operational access will migrate after creating a verified backup. |
 | `incompatible` | The binary cannot safely read this database format. |
 
 | `resolution.status` | Meaning |
@@ -740,10 +718,9 @@ same remote intentionally non-unique wherever another active binding still
 uses it. Future clone resolution then fails as ambiguous until a scope is
 selected explicitly.
 
-Scope deletion is not part of the first release. An abandoned repository scope
-can remain registered without participating in default recall. Removing a scope
-requires a deliberate future policy for its memories and bindings; it must never
-orphan memory rows.
+Scope deletion is not supported. An abandoned repository scope can remain
+registered without participating in default recall. This preserves the invariant
+that deleting scope metadata must never orphan memory rows.
 
 ## Memory Operations
 
@@ -802,8 +779,7 @@ A move:
 - Reports the source and destination scopes.
 - Is an idempotent success when source and destination are the same.
 
-Moving to a broader scope is never automatic. A future `promote` command may be
-an alias for `move --to`, but promotion does not have separate semantics.
+Moving to a broader scope is never automatic.
 
 ### Forget
 
@@ -811,8 +787,8 @@ an alias for `move --to`, but promotion does not have separate semantics.
 its former scope. The agent skill should continue to require `show` before a
 destructive operation when the exact content matters.
 
-Later, optional `--if-scope` and revision preconditions can protect concurrent
-agent operations:
+Optional `--if-scope` and revision preconditions protect concurrent agent
+operations:
 
 ```bash
 thr edit 42 --if-scope repo:01KABC --if-revision 3 ...
@@ -870,13 +846,12 @@ window must be evaluated within eligible scopes, not across the database.
 
 ### Duplicate Text
 
-The scope feature does not remove existing duplicate rows or prohibit future
-duplicates. Storage deduplication and keyed memories are separate features.
+The scope feature does not remove existing duplicate rows or prohibit duplicate
+text. Duplicate memories remain independently managed records.
 
-The first scope release does not collapse duplicate records during `ask`,
-`search`, or `list`. Returning both IDs and scopes is more transparent than
-hiding one record with an implicit winner policy. Duplicate suppression can be
-added later with explicit metadata listing every collapsed record.
+Scope-aware `ask`, `search`, and `list` do not collapse duplicate records.
+Returning both IDs and scopes is more transparent than hiding one record with an
+implicit winner policy.
 
 Similar but non-identical memories remain separate. `thr` must not use embedding
 distance to decide that memories are duplicates.
@@ -888,8 +863,7 @@ scope says "Use npm" and the repository scope says "This repository uses pnpm,"
 both may be relevant and both should be returned with scope metadata.
 
 Narrower scope does not automatically suppress broader text, including exact
-duplicates. Future keyed memories can add deterministic override semantics, but
-scopes alone must not guess.
+duplicates. Scopes do not provide override semantics.
 
 ### Index Health
 
@@ -1089,7 +1063,7 @@ Warnings are structured objects rather than strings:
 }
 ```
 
-Warning codes and detail field types are stable within the API version. Initial
+Warning codes and detail field types are stable within the API version. Defined
 codes include `legacy_scope_assignment`, `repository_identity_drift`, and
 `repository_identity_ambiguous`, and `managed_skill_outdated`.
 
@@ -1108,7 +1082,7 @@ Relevant error codes include:
 | `scope_conflict` | A conditional operation found a different scope. |
 | `memory_not_found` | The exact memory ID does not exist. |
 | `index_stale` | An eligible scope needs semantic reindexing. |
-| `database_migration_required` | Read-only inspection found a database that needs an explicit upgrade. |
+| `database_migration_required` | Read-only inspection found a database that needs migration, or an automatic migration failed. |
 | `database_version_incompatible` | The binary cannot safely use this scoped database format. |
 
 Errors should include a suggested next command when one deterministic action can
@@ -1204,7 +1178,7 @@ Examples:
 | The user prefers concise explanations. | Store in `user`. |
 | The user wants tests run before every commit. | Store in `user` if explicitly broad. |
 | This temporary branch is failing CI. | Do not store as durable memory. |
-| Several repositories share this process. | Keep separate until an explicit `project` scope exists. |
+| Several repositories share this process. | Store a separate memory in each repository scope where it applies. |
 
 Agents should not infer broad scope from wording alone. User intent and current
 task context remain authoritative.
@@ -1233,17 +1207,24 @@ only as informational and are never rewritten automatically.
 
 ## Migration
 
-Scope migration is an explicit format upgrade rather than an automatic side
-effect of `list`, `ask`, or another routine command. An older compatible
-database reports `database_migration_required` and suggests:
+Scope migration is automatic at controlled operational boundaries. After
+installing the new binary, the release installer runs migration for the selected
+default database (`THR_DB` when set, otherwise `~/.thr/thr.db`) when that file
+exists. A missing or current database is harmless.
+
+Legacy databases at other paths, including custom `--db` databases, migrate on
+their first operational access. `thr context` is the read-only exception: it
+reports `migration_required` without changing the database. The explicit command
+remains available for planned upgrades and retries:
 
 ```bash
 thr migrate
 ```
 
-`thr migrate` acquires an exclusive database lock, creates a private timestamped
-backup beside the database, verifies that the backup opens and contains the
-expected memory and embedding row counts, and only then mutates the original.
+Automatic access and `thr migrate` use the same migration path. It acquires an
+exclusive database lock, creates a private timestamped backup beside the
+database, verifies that the backup opens and contains the expected memory and
+embedding row counts, and only then mutates the original.
 If backup creation or verification fails, migration makes no format change. JSON
 v2 migration output includes the backup path, old and new format versions, and
 validated row counts. A new empty installation creates the scoped format
@@ -1274,7 +1255,7 @@ output. Recall emits an aggregate warning whenever it returns one or more legacy
 assignments. This prevents a repository-specific legacy memory from appearing
 indistinguishable from an intentionally broad user instruction.
 
-Assignment provenance uses three initial values: `automatic_context` for an
+Assignment provenance uses three values: `automatic_context` for an
 implicit repository destination, `explicit` for a named destination or reviewed
 move, and `legacy_default` for migrated rows.
 
@@ -1342,12 +1323,6 @@ ambiguous. Choose the least-broad scope that covers every context where the
 memory is explicitly intended to apply. Create explicit copies only when
 independently managed records are intentional.
 
-### Why not use tags for repository grouping?
-
-Tags are free-form and inconsistent. Agents may produce `test`, `tests`, and
-`testing`, and retrieval can accidentally omit the tag filter. Scope is a
-required normalized relationship enforced by storage and every query.
-
 ### Why `user` instead of `global`?
 
 `global` is ambiguous: it could mean machine-wide, public, shared, or all
@@ -1357,8 +1332,7 @@ databases. `user` means broadly applicable within the selected local profile.
 
 In the current single-user local product they have no reliable behavioral
 difference. Adding both would force agents to make a distinction that the
-system cannot explain. A future team or shared scope needs a separate trust,
-storage, and synchronization design.
+system cannot explain.
 
 ### Why not default every write to `user` for compatibility?
 
@@ -1414,8 +1388,8 @@ always returns the memory's scope.
 
 Not generally. Free-form text has no safe override key. Exact duplicate text can
 appear more than once during recall; each result keeps its ID and scope.
-Non-identical memories are also ranked and returned with scope metadata. Keyed
-overrides and duplicate suppression are future features.
+Non-identical memories are also ranked and returned with scope metadata. Scopes
+do not suppress duplicates or provide override semantics.
 
 ### Does a repository scope follow branches and worktrees?
 
@@ -1433,9 +1407,9 @@ changes never silently move repository memory.
 
 ### Can a repository scope be deleted?
 
-Not initially. Deleting a scope without defining what happens to its memories
-would violate the non-null scope invariant. Unused scopes do not participate in
-default recall.
+No. Deleting a scope without defining what happens to its memories would violate
+the non-null scope invariant. Unused scopes do not participate in default
+recall.
 
 ### Are scopes private or secure?
 
@@ -1455,8 +1429,8 @@ scopes. All-scope administration can still report and repair every scope.
 
 ### Do scopes solve stale or contradictory memories?
 
-No. Scopes reduce applicability mistakes. Provenance, verification, expiration,
-supersession, and keyed conflict handling are separate future features.
+No. Scopes reduce applicability mistakes. They do not provide verification,
+expiration, supersession, or conflict handling.
 
 ## Intentional Frictions
 
@@ -1471,11 +1445,11 @@ The design introduces several deliberate costs:
 | Results contain scope metadata. | Agents need provenance even though output becomes larger. |
 | Empty JSON responses use an envelope. | Agents must know which scopes were searched. |
 | Legacy user memories may need review. | Their original applicability was never recorded. |
-| Cross-repository search is explicit. | Normal recall must not expose unrelated project context. |
-| Existing databases require `thr migrate`. | The format boundary needs consent, a verified backup, and downgrade safety. |
+| Cross-repository search is explicit. | Normal recall must not expose unrelated repository context. |
+| Existing databases require a verified migration. | The format boundary needs a safe backup and downgrade path. |
 
 These frictions protect durable memory quality. The common repository recall and
-write path remains shorter than the exceptional broad or cross-project path.
+write path remains shorter than the exceptional broad or cross-repository path.
 
 ## Known Limits
 
@@ -1490,7 +1464,7 @@ write path remains shorter than the exceptional broad or cross-project path.
 - Scopes do not identify which agent or source created a memory.
 - Scopes do not prevent prompt injection or untrusted memory content.
 - Scopes do not address long-memory embedding truncation.
-- `project`, team, session, and package-level scopes are deferred.
+- There is no scope spanning an arbitrary subset of repositories.
 - All scopes share one database and encryption posture.
 
 ## Rejected Alternatives
@@ -1508,7 +1482,7 @@ write path remains shorter than the exceptional broad or cross-project path.
 | Infer scope from memory text | Language is ambiguous and repository names can be mentioned incidentally. |
 | Automatic broadening by recall count | Popularity does not imply broader applicability. |
 | Arbitrary group hierarchy | Creates visibility graphs that agents cannot predict. |
-| Automatic project inference | Folder and organization structure do not prove shared applicability. |
+| Automatic repository grouping | Folder and organization structure do not prove shared applicability. |
 | Treat scopes as permissions | All rows remain readable from one local database. |
 
 ## Rollout
@@ -1524,8 +1498,8 @@ together.
 - Add mandatory scope ownership to every memory.
 - Create the singleton user scope.
 - Migrate existing memories to user without re-embedding.
-- Require explicit migration with a verified downgrade backup and fail-closed
-  behavior for older binaries.
+- Migrate on installer or first operational access with a verified downgrade
+  backup and fail-closed behavior for older binaries; retain `thr migrate`.
 - Add repository registry and context resolution.
 - Make text and semantic retrieval scope-aware before candidate limits.
 - Include scope metadata in human output.
@@ -1545,14 +1519,6 @@ together.
 - Add optimistic revision and scope preconditions.
 - Add tests for clones, worktrees, forks, moves, remotes, symlinks, nested
   repositories, and concurrent operations.
-
-### Later
-
-- Explicit multi-repository project scopes.
-- Keyed memories with deterministic narrow-over-broad overrides.
-- Provenance, verification, expiration, and supersession.
-- Tags and metadata filters.
-- Shared scopes only with a separate trust and synchronization design.
 
 ## Acceptance Criteria
 
@@ -1595,4 +1561,5 @@ Which scopes did this query search?
 Where did each result come from?
 ```
 
-If any answer is implicit or unavailable, the scope design is not complete.
+If any answer is implicit or unavailable, the implementation does not satisfy
+this specification.

@@ -20,8 +20,11 @@ func main() {
 	rootCmd := cli.NewRootCommand(version, commit, date)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	executed, err := rootCmd.ExecuteContextC(ctx)
+	if err != nil {
+		if !cli.PrintError(executed, err, os.Stderr) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(1)
 	}
 }

@@ -50,3 +50,24 @@ func TestThrSkillFrontmatterIsPortable(t *testing.T) {
 		t.Fatalf("skill description is too long: %d bytes", len(description))
 	}
 }
+
+func TestThrSkillDocumentsScopeContract(t *testing.T) {
+	for _, want := range []string{
+		"<!-- thr:managed-skill:v2 -->",
+		"default recall searches that repository plus the user scope",
+		"least-broad scope",
+		"--scope user",
+		"thr --format json-v2 context",
+		"thr --format json-v2 ask",
+		"--cwd",
+		"thr move",
+		"repo:<id>",
+	} {
+		if !strings.Contains(ThrSkill, want) {
+			t.Fatalf("skill must document %q", want)
+		}
+	}
+	if strings.Contains(ThrSkill, "<!-- thr:managed-skill:v1 -->") {
+		t.Fatal("bundled skill must use only the v2 managed marker")
+	}
+}

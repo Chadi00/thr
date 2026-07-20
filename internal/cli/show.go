@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Chadi00/thr/internal/domain"
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
@@ -20,10 +21,10 @@ func newShowCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("invalid id %q: %w", args[0], err)
 			}
 
-			deps, cleanup, err := initReadRuntime(*dbPath)
+			deps, selection, cleanup, err := resolveExactRuntime(cmd, *dbPath, false)
 			if err != nil {
 				if isMissingDatabase(err) {
-					return fmt.Errorf("memory %d not found", id)
+					return &commandError{Code: "memory_not_found", Message: fmt.Sprintf("memory %d not found", id), Cause: store.ErrMemoryNotFound}
 				}
 				return err
 			}
@@ -32,11 +33,14 @@ func newShowCommand(dbPath *string) *cobra.Command {
 			memory, err := deps.repo.GetMemory(cmd.Context(), id)
 			if err != nil {
 				if err == store.ErrMemoryNotFound {
-					return fmt.Errorf("memory %d not found", id)
+					return &commandError{Code: "memory_not_found", Message: fmt.Sprintf("memory %d not found", id), Cause: err}
 				}
 				return err
 			}
 
+			if isJSONV2Output(cmd) {
+				return encodeV2(cmd, "memory.show", selection, map[string]any{"memory": output.NewMemoryDTO(memory)}, []domain.Memory{memory})
+			}
 			if isJSONOutput(cmd) {
 				return output.PrintMemoryJSON(cmd.OutOrStdout(), memory)
 			}

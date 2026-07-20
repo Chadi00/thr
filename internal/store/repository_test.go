@@ -6,7 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Chadi00/thr/internal/domain"
 )
+
+var testScopes = []string{"user"}
 
 func TestRepositoryCRUDAndSearch(t *testing.T) {
 	ctx := context.Background()
@@ -29,16 +33,16 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 
 	identity := testEmbeddingIdentity()
 
-	m1, err := repo.AddMemory(ctx, "the user likes sports cars", vectorA, identity)
+	m1, err := repo.AddMemory(ctx, "the user likes sports cars", vectorA, identity, "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add m1: %v", err)
 	}
-	m2, err := repo.AddMemory(ctx, "the user prefers motorcycles", vectorB, identity)
+	m2, err := repo.AddMemory(ctx, "the user prefers motorcycles", vectorB, identity, "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add m2: %v", err)
 	}
 
-	memories, err := repo.ListMemories(ctx, 10)
+	memories, err := repo.ListMemories(ctx, testScopes, 10, false)
 	if err != nil {
 		t.Fatalf("list memories: %v", err)
 	}
@@ -53,7 +57,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("unexpected get memory text: %q", got.Text)
 	}
 
-	keywordHits, err := repo.KeywordSearch(ctx, "sports", 5)
+	keywordHits, err := repo.KeywordSearch(ctx, "sports", testScopes, 5)
 	if err != nil {
 		t.Fatalf("keyword search: %v", err)
 	}
@@ -61,7 +65,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("unexpected keyword hits: %+v", keywordHits)
 	}
 
-	semanticHits, err := repo.SemanticSearch(ctx, vectorA, 1, identity, DefaultSemanticMaxDistance)
+	semanticHits, err := repo.SemanticSearch(ctx, vectorA, testScopes, 1, identity, DefaultSemanticMaxDistance)
 	if err != nil {
 		t.Fatalf("semantic search: %v", err)
 	}
@@ -69,7 +73,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected top semantic hit to be %d, got %+v", m1.ID, semanticHits)
 	}
 
-	updated, err := repo.EditMemory(ctx, m2.ID, "the user prefers classic sports cars", vectorA, identity)
+	updated, err := repo.EditMemory(ctx, m2.ID, "the user prefers classic sports cars", vectorA, identity, Preconditions{})
 	if err != nil {
 		t.Fatalf("edit memory: %v", err)
 	}
@@ -77,7 +81,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("unexpected updated text: %q", updated.Text)
 	}
 
-	keywordHits, err = repo.KeywordSearch(ctx, "classic", 5)
+	keywordHits, err = repo.KeywordSearch(ctx, "classic", testScopes, 5)
 	if err != nil {
 		t.Fatalf("keyword search after edit: %v", err)
 	}
@@ -85,11 +89,11 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected updated memory in keyword search, got %+v", keywordHits)
 	}
 
-	if err := repo.ForgetMemory(ctx, m1.ID); err != nil {
+	if _, err := repo.ForgetMemory(ctx, m1.ID, Preconditions{}); err != nil {
 		t.Fatalf("forget memory: %v", err)
 	}
 
-	keywordHits, err = repo.KeywordSearch(ctx, "sports", 10)
+	keywordHits, err = repo.KeywordSearch(ctx, "sports", testScopes, 10)
 	if err != nil {
 		t.Fatalf("keyword search after forget: %v", err)
 	}
@@ -105,7 +109,7 @@ func TestRepositoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected 1 memory after forget, got %d", count)
 	}
 
-	recallHits, err := repo.RecallSearch(ctx, "clasik sport", 5, 100, 100)
+	recallHits, err := repo.RecallSearch(ctx, "clasik sport", testScopes, 5, 100, 100)
 	if err != nil {
 		t.Fatalf("recall search: %v", err)
 	}
@@ -133,15 +137,15 @@ func TestSemanticSearchFiltersByMaxDistance(t *testing.T) {
 	closeVector := vectorOf(0.1)
 	farVector := vectorOf(0.9)
 
-	closeMemory, err := repo.AddMemory(ctx, "close semantic match", closeVector, identity)
+	closeMemory, err := repo.AddMemory(ctx, "close semantic match", closeVector, identity, "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add close memory: %v", err)
 	}
-	if _, err := repo.AddMemory(ctx, "far semantic mismatch", farVector, identity); err != nil {
+	if _, err := repo.AddMemory(ctx, "far semantic mismatch", farVector, identity, "user", domain.ScopeAssignmentExplicit); err != nil {
 		t.Fatalf("add far memory: %v", err)
 	}
 
-	filtered, err := repo.SemanticSearch(ctx, closeVector, 2, identity, DefaultSemanticMaxDistance)
+	filtered, err := repo.SemanticSearch(ctx, closeVector, testScopes, 2, identity, DefaultSemanticMaxDistance)
 	if err != nil {
 		t.Fatalf("semantic search with threshold: %v", err)
 	}
@@ -155,7 +159,7 @@ func TestSemanticSearchFiltersByMaxDistance(t *testing.T) {
 		t.Fatalf("expected distance <= %.2f, got %.6f", DefaultSemanticMaxDistance, filtered[0].Distance)
 	}
 
-	unfiltered, err := repo.SemanticSearch(ctx, closeVector, 2, identity, 0)
+	unfiltered, err := repo.SemanticSearch(ctx, closeVector, testScopes, 2, identity, 0)
 	if err != nil {
 		t.Fatalf("semantic search without threshold: %v", err)
 	}
@@ -179,12 +183,12 @@ func TestRecallSearchFuzzySubsequence(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	memory, err := repo.AddMemory(ctx, "rust ownership tips", vectorOf(0.3), testEmbeddingIdentity())
+	memory, err := repo.AddMemory(ctx, "rust ownership tips", vectorOf(0.3), testEmbeddingIdentity(), "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
 	// "rst" is not a contiguous substring of "rust" but matches as a subsequence.
-	hits, err := repo.RecallSearch(ctx, "rst", 5, 200, 50)
+	hits, err := repo.RecallSearch(ctx, "rst", testScopes, 5, 200, 50)
 	if err != nil {
 		t.Fatalf("recall search: %v", err)
 	}
@@ -210,12 +214,12 @@ func TestRecallSearchEscapesLikePattern(t *testing.T) {
 	repo := NewRepository(db)
 
 	vector := vectorOf(0.2)
-	memory, err := repo.AddMemory(ctx, "literal 100%_match and more", vector, testEmbeddingIdentity())
+	memory, err := repo.AddMemory(ctx, "literal 100%_match and more", vector, testEmbeddingIdentity(), "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
 
-	hits, err := repo.RecallSearch(ctx, "100%_match", 5, 200, 50)
+	hits, err := repo.RecallSearch(ctx, "100%_match", testScopes, 5, 200, 50)
 	if err != nil {
 		t.Fatalf("recall search: %v", err)
 	}
@@ -239,11 +243,11 @@ func TestKeywordSearchTreatsInputAsPlainText(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	if _, err := repo.AddMemory(ctx, `she said "quoted" syntax literally`, vectorOf(0.4), testEmbeddingIdentity()); err != nil {
+	if _, err := repo.AddMemory(ctx, `she said "quoted" syntax literally`, vectorOf(0.4), testEmbeddingIdentity(), "user", domain.ScopeAssignmentExplicit); err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
 
-	hits, err := repo.KeywordSearch(ctx, `"quoted" OR NEAR(*)`, 5)
+	hits, err := repo.KeywordSearch(ctx, `"quoted" OR NEAR(*)`, testScopes, 5)
 	if err != nil {
 		t.Fatalf("keyword search with literal-looking FTS syntax: %v", err)
 	}
@@ -267,14 +271,14 @@ func TestRecallSearchDoesNotHideFTSFailures(t *testing.T) {
 	})
 
 	repo := NewRepository(db)
-	if _, err := repo.AddMemory(ctx, "semantic recall needs a working fts index", vectorOf(0.5), testEmbeddingIdentity()); err != nil {
+	if _, err := repo.AddMemory(ctx, "semantic recall needs a working fts index", vectorOf(0.5), testEmbeddingIdentity(), "user", domain.ScopeAssignmentExplicit); err != nil {
 		t.Fatalf("add memory: %v", err)
 	}
-	if _, err := db.Exec(`DROP TABLE memory_fts`); err != nil {
+	if _, err := db.Exec(`DROP TABLE scoped_memory_fts`); err != nil {
 		t.Fatalf("drop memory_fts: %v", err)
 	}
 
-	if _, err := repo.RecallSearch(ctx, "semantic", 5, 50, 25); err == nil {
+	if _, err := repo.RecallSearch(ctx, "semantic", testScopes, 5, 50, 25); err == nil {
 		t.Fatal("expected recall search to surface the FTS failure")
 	}
 }
@@ -301,22 +305,22 @@ func TestIndexHealthTracksStaleAndMissingEmbeddings(t *testing.T) {
 		ManifestSHA256: "old-manifest",
 		Dimension:      768,
 	}
-	if _, err := repo.AddMemory(ctx, "fresh", vectorOf(0.1), active); err != nil {
+	if _, err := repo.AddMemory(ctx, "fresh", vectorOf(0.1), active, "user", domain.ScopeAssignmentExplicit); err != nil {
 		t.Fatalf("add fresh memory: %v", err)
 	}
-	staleMemory, err := repo.AddMemory(ctx, "stale", vectorOf(0.2), stale)
+	staleMemory, err := repo.AddMemory(ctx, "stale", vectorOf(0.2), stale, "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add stale memory: %v", err)
 	}
-	missing, err := repo.AddMemory(ctx, "missing", vectorOf(0.3), active)
+	missing, err := repo.AddMemory(ctx, "missing", vectorOf(0.3), active, "user", domain.ScopeAssignmentExplicit)
 	if err != nil {
 		t.Fatalf("add missing memory: %v", err)
 	}
-	if _, err := db.Exec(`DELETE FROM memory_embeddings WHERE rowid = ?`, missing.ID); err != nil {
+	if _, err := db.Exec(`DELETE FROM scoped_memory_embeddings WHERE rowid = ?`, missing.ID); err != nil {
 		t.Fatalf("delete vector row: %v", err)
 	}
 
-	health, err := repo.IndexHealth(ctx, active)
+	health, err := repo.IndexHealth(ctx, testScopes, active)
 	if err != nil {
 		t.Fatalf("index health: %v", err)
 	}
@@ -324,7 +328,7 @@ func TestIndexHealthTracksStaleAndMissingEmbeddings(t *testing.T) {
 		t.Fatalf("unexpected health: %+v", health)
 	}
 
-	needsIndex, err := repo.ListMemoriesNeedingIndex(ctx, active)
+	needsIndex, err := repo.ListMemoriesNeedingIndex(ctx, testScopes, active)
 	if err != nil {
 		t.Fatalf("list memories needing index: %v", err)
 	}
@@ -336,13 +340,13 @@ func TestIndexHealthTracksStaleAndMissingEmbeddings(t *testing.T) {
 		t.Fatalf("unexpected memories needing index: %+v", needsIndex)
 	}
 
-	if err := repo.UpsertMemoryEmbedding(ctx, staleMemory.ID, vectorOf(0.4), active); err != nil {
+	if err := repo.UpsertMemoryEmbedding(ctx, staleMemory.ID, vectorOf(0.4), active, staleMemory.Revision, staleMemory.Scope.ID); err != nil {
 		t.Fatalf("update stale embedding: %v", err)
 	}
-	if err := repo.UpsertMemoryEmbedding(ctx, missing.ID, vectorOf(0.5), active); err != nil {
+	if err := repo.UpsertMemoryEmbedding(ctx, missing.ID, vectorOf(0.5), active, missing.Revision, missing.Scope.ID); err != nil {
 		t.Fatalf("update missing embedding: %v", err)
 	}
-	health, err = repo.IndexHealth(ctx, active)
+	health, err = repo.IndexHealth(ctx, testScopes, active)
 	if err != nil {
 		t.Fatalf("index health after repair: %v", err)
 	}
@@ -384,14 +388,14 @@ func BenchmarkRecallSearch(b *testing.B) {
 	identity := testEmbeddingIdentity()
 	for i := 0; i < 2500; i++ {
 		text := fmt.Sprintf("memory %04d about project context, semantic search, privacy, and indexed recall", i)
-		if _, err := repo.AddMemory(ctx, text, vectorOf(float32(i%10)/10), identity); err != nil {
+		if _, err := repo.AddMemory(ctx, text, vectorOf(float32(i%10)/10), identity, "user", domain.ScopeAssignmentExplicit); err != nil {
 			b.Fatalf("add memory: %v", err)
 		}
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := repo.RecallSearch(ctx, "privacy indexed recall", 25, DefaultRecentWindow, MaxRecallCandidates); err != nil {
+		if _, err := repo.RecallSearch(ctx, "privacy indexed recall", testScopes, 25, DefaultRecentWindow, MaxRecallCandidates); err != nil {
 			b.Fatalf("recall search: %v", err)
 		}
 	}

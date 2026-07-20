@@ -6,12 +6,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Chadi00/thr/internal/output"
 	"github.com/Chadi00/thr/internal/privacy"
 	agentSkills "github.com/Chadi00/thr/skills"
 	"github.com/spf13/cobra"
 )
 
-const thrSkillManagedMarker = "<!-- thr:managed-skill:v1 -->"
+const (
+	thrSkillManagedMarkerV1 = "<!-- thr:managed-skill:v1 -->"
+	thrSkillManagedMarker   = "<!-- thr:managed-skill:v2 -->"
+)
 
 type setupTarget struct {
 	name              string
@@ -37,27 +41,34 @@ func newSetupCommand() *cobra.Command {
 		Use:   "setup",
 		Short: "Install thr integrations for coding agents",
 		Long:  "Install the thr Agent Skill for supported coding agents.",
+		Args:  cobra.NoArgs,
 	}
 
-	cmd.AddCommand(
-		newSetupTargetCommand(setupTarget{
+	for _, target := range setupTargets() {
+		cmd.AddCommand(newSetupTargetCommand(target))
+	}
+
+	return cmd
+}
+
+func setupTargets() []setupTarget {
+	return []setupTarget{
+		{
 			name:              "claude-code",
 			displayName:       "Claude Code",
 			relativeSkillPath: []string{".claude", "skills", "thr", "SKILL.md"},
-		}),
-		newSetupTargetCommand(setupTarget{
+		},
+		{
 			name:              "opencode",
 			displayName:       "OpenCode",
 			relativeSkillPath: []string{".agents", "skills", "thr", "SKILL.md"},
-		}),
-		newSetupTargetCommand(setupTarget{
+		},
+		{
 			name:              "codex",
 			displayName:       "Codex",
 			relativeSkillPath: []string{".agents", "skills", "thr", "SKILL.md"},
-		}),
-	)
-
-	return cmd
+		},
+	}
 }
 
 func newSetupTargetCommand(target setupTarget) *cobra.Command {
@@ -71,6 +82,9 @@ func newSetupTargetCommand(target setupTarget) *cobra.Command {
 			result, err := installSetupTarget(target, force)
 			if err != nil {
 				return err
+			}
+			if isJSONV2Output(cmd) {
+				return encodeV2(cmd, "setup."+target.name, independentSelection(cmd), map[string]any{"status": result.status, "path": result.path}, nil)
 			}
 			printSetupResult(cmd, target, result)
 			return nil
@@ -144,7 +158,8 @@ func installSkillFile(path string, content []byte, force bool) (setupStatus, err
 		}
 		return setupStatusCurrent, nil
 	}
-	if !bytes.Contains(existing, []byte(thrSkillManagedMarker)) && !force {
+	managed := bytes.Contains(existing, []byte(thrSkillManagedMarkerV1)) || bytes.Contains(existing, []byte(thrSkillManagedMarker))
+	if !managed && !force {
 		return "", fmt.Errorf("refusing to overwrite existing unmanaged skill at %s; rerun with --force to replace it", path)
 	}
 
@@ -187,4 +202,31 @@ func writeFileAtomic(path string, content []byte) error {
 		return fmt.Errorf("harden skill %s: %w", path, err)
 	}
 	return nil
+}
+
+func managedSkillWarnings() []output.Warning {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	warnings := make([]output.Warning, 0)
+	seen := map[string]bool{}
+	for _, target := range setupTargets() {
+		path := setupTargetPath(home, target)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		content, err := os.ReadFile(path)
+		if err != nil || bytes.Equal(content, []byte(agentSkills.ThrSkill)) {
+			continue
+		}
+		if bytes.Contains(content, []byte(thrSkillManagedMarkerV1)) || bytes.Contains(content, []byte(thrSkillManagedMarker)) {
+			warnings = append(warnings, output.Warning{
+				Code: "managed_skill_outdated", Message: "An installed managed thr skill is outdated.",
+				Details: map[string]any{"path": path, "suggested_command": "thr setup " + target.name},
+			})
+		}
+	}
+	return warnings
 }
