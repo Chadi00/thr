@@ -56,9 +56,15 @@ create_stub_binary() {
   cat >"$path" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "${THR_INSTALL_TEST_COMMAND_LOG:-}" ]]; then
+  printf '%s\n' "$*" >>"$THR_INSTALL_TEST_COMMAND_LOG"
+fi
 case "${1:-}" in
   prefetch)
     printf 'prefetch ok\n'
+    ;;
+  migrate)
+    printf 'migration ok\n'
     ;;
   --help | help | "")
     printf 'stub thr help\n'
@@ -220,6 +226,7 @@ main() {
     export PATH="${install_dir}:$PATH"
     export THR_UNINSTALL_TEST_BIN_DIRS="$install_dir"
     export THR_SMOKE_REAL_BINARY=0
+    export THR_INSTALL_TEST_COMMAND_LOG="$WORK_DIR/commands"
   else
     hide_homebrew_from_path
     export THR_INSTALL_PREFIX="$WORK_DIR/prefix"
@@ -234,6 +241,9 @@ main() {
 
   [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the install bin dir'
   [[ -f "$THR_INSTALL_PREFIX/lib/thr/manifest.json" ]] || fail 'install did not place thr manifest in the lib dir'
+  if [[ "$THR_SMOKE_REAL_BINARY" == "0" ]] && ! grep -qFx 'migrate' "$THR_INSTALL_TEST_COMMAND_LOG"; then
+    fail 'installer did not check database migration'
+  fi
   assert_path_block_present
   assert_thr_usable
   assert_agent_skill_prompt_skipped

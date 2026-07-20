@@ -3,24 +3,33 @@ name: thr
 description: Use thr for durable memory across coding sessions, including retrieving saved preferences or project facts and managing memories by storing, editing, deleting, or listing them. Use when a question could plausibly be answered from memory, or when the user asks to remember, update, remove, or review stored information.
 ---
 
-<!-- thr:managed-skill:v1 -->
+<!-- thr:managed-skill:v2 -->
 
 # thr Memory Management
 
 Use `thr` when a coding task may depend on durable memory from previous sessions, or when the user asks you to remember, update, or forget something.
 
+## Resolve context
+
+- Run `thr --format json-v2 context` when repository context is unclear. It is read-only and reports default read and write scopes.
+- Use `--cwd /path/to/repo` to resolve another checkout without changing the process working directory, for example `thr --cwd /work/api --format json-v2 context`.
+
 ## Recall memories
 
-- At the start of work that may depend on prior preferences, project decisions, or recurring workflows, run `thr ask --json "<question>"`.
-- Use semantic questions for meaning, such as `thr ask --json "what does the user prefer for CLI output?"`.
-- Use `thr search --json "<keywords>"` for exact identifiers, project names, tools, file names, or short phrases.
+- In a repository, default recall searches that repository plus the user scope. Outside a repository, it searches the user scope.
+- At the start of work that may depend on prior preferences, repository decisions, or recurring workflows, run `thr --format json-v2 ask "<question>"`.
+- Use `thr --format json-v2 search "<keywords>"` for exact identifiers, project names, tools, file names, or short phrases.
+- Use JSON v2 for new agent integrations because it includes searched scopes and each result's scope, including empty recall results.
 - Treat `thr ask` as retrieval only. It returns matching memories, not a generated answer.
 - If semantic retrieval reports stale or missing embeddings, run `thr index` once, then retry the lookup.
+- For another registered repository, get its stable ID with `thr --format json-v2 scope list`, then recall with `--scope repo:<id>`. Memory IDs also remain valid across repositories.
 
 ## Store memories
 
 - Store a memory when the user explicitly asks you to remember something.
 - For inferred facts, preferences, or decisions, ask before storing unless the user has already given clear permission for proactive memory writes.
+- Store in the least-broad scope covering every context where the fact is explicitly intended to apply.
+- In a repository, an unqualified `thr add` writes to that repository. Use explicit `--scope user` only for facts intended to apply across repositories. Outside a repository, writes require `--scope user`.
 - Save only durable information that is likely to help in future sessions.
 - Keep each memory short, standalone, and factual.
 - Prefer stdin for long or multiline text: `thr add -`.
@@ -28,7 +37,7 @@ Use `thr` when a coding task may depend on durable memory from previous sessions
 Good memories:
 
 - `User prefers concise CLI documentation with examples.`
-- `Project thr stores local memories in plaintext SQLite at ~/.thr/thr.db by default.`
+- `This repository runs integration tests with Docker.`
 - `For this repo, release commits must start with feat:, fix:, or chore: to trigger tagging.`
 
 Avoid storing:
@@ -40,10 +49,11 @@ Avoid storing:
 
 ## Maintain memories
 
-- Use `thr list --last 20 --json` to inspect recent memories and ids. Adjust the count when the user asks for a smaller recent window, such as `thr list --last 4 --json`.
-- Use `thr show --json <id>` before changing or deleting a memory when the exact current text matters.
+- Use `thr --format json-v2 list --last 20` to inspect recent memories, IDs, and scopes.
+- Use `thr --format json-v2 show <id>` before changing or deleting a memory when the exact current text matters.
 - Use `thr edit <id> -` to correct an existing memory.
 - Use `thr forget <id>` only when the user explicitly asks to remove a memory.
+- Use `thr move <id> --to user`, `--to repo`, or `--to repo:<id>` to correct scope without changing the memory ID or text.
 
 ## Report usage
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/Chadi00/thr/internal/domain"
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
@@ -14,6 +15,8 @@ func newAskCommand(dbPath *string) *cobra.Command {
 	var limit int
 	var maxDistance float64
 	var withDistance bool
+	var scopes []string
+	var allScopes bool
 
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
@@ -25,40 +28,53 @@ func newAskCommand(dbPath *string) *cobra.Command {
 				return fmt.Errorf("--max-distance must be greater than 0 and at most 4")
 			}
 
-			deps, cleanup, err := initReadRuntimeWithEmbedder(*dbPath, false)
+			deps, selection, cleanup, err := resolveReadRuntime(cmd, *dbPath, scopes, allScopes)
 			if err != nil {
-				if isMissingDatabase(err) {
-					if isJSONOutput(cmd) {
-						return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), nil)
-					}
-					output.PrintSemanticResults(cmd.OutOrStdout(), nil, withDistance)
-					return nil
-				}
 				return err
 			}
 			defer cleanup()
+			if deps.repo == nil {
+				if isJSONV2Output(cmd) {
+					return encodeV2(cmd, "memory.ask", selection, map[string]any{"query": args[0], "matches": []output.SemanticMatchDTO{}}, nil)
+				}
+				if isJSONOutput(cmd) {
+					return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), nil)
+				}
+				output.PrintSemanticResults(cmd.OutOrStdout(), nil, withDistance)
+				return nil
+			}
 
-			health, err := deps.repo.IndexHealth(cmd.Context(), activeEmbeddingIdentity())
+			health, err := deps.repo.IndexHealth(cmd.Context(), selection.IDs(), activeEmbeddingIdentity())
 			if err != nil {
 				return err
 			}
 			if health.Stale > 0 || health.MissingEmbeddings > 0 {
-				return fmt.Errorf("semantic index needs updating; run 'thr index'")
+				return &commandError{Code: "index_stale", Message: "semantic index needs updating; run 'thr index'", SuggestedCommand: "thr index"}
+			}
+			if err := initEmbedder(deps, false); err != nil {
+				return err
 			}
 
 			vector, err := deps.embedder.QueryEmbed(args[0])
 			if err != nil {
 				return err
 			}
-			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, limit, activeEmbeddingIdentity(), maxDistance)
+			results, err := deps.repo.SemanticSearch(cmd.Context(), vector, selection.IDs(), limit, activeEmbeddingIdentity(), maxDistance)
 			if err != nil {
 				return err
 			}
-
+			memories := make([]domain.Memory, len(results))
+			for i, result := range results {
+				memories[i] = result.Memory
+			}
+			if isJSONV2Output(cmd) {
+				return encodeV2(cmd, "memory.ask", selection, map[string]any{"query": args[0], "matches": semanticDTOs(results)}, memories)
+			}
 			if isJSONOutput(cmd) {
 				return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), results)
 			}
 			output.PrintSemanticResults(cmd.OutOrStdout(), results, withDistance)
+			printHumanWarnings(cmd, selection, memories)
 			return nil
 		},
 	}
@@ -66,6 +82,8 @@ func newAskCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "n", 3, "Maximum semantic results")
 	cmd.Flags().Float64Var(&maxDistance, "max-distance", store.DefaultSemanticMaxDistance, "Maximum vector distance for semantic results")
 	cmd.Flags().BoolVar(&withDistance, "with-distance", false, "Print vector distance score")
+	cmd.Flags().StringArrayVar(&scopes, "scope", nil, "Exact scope to search; repeat for a union")
+	cmd.Flags().BoolVar(&allScopes, "all-scopes", false, "Search every registered scope")
 
 	return cmd
 }

@@ -12,11 +12,14 @@ THR_SSH_SIGNING_NAMESPACE="thr-release"
 THR_SSH_SIGNING_IDENTITY="thr-release"
 # Release jobs must sign checksums.txt with the private key matching this allowed signer.
 THR_SSH_ALLOWED_SIGNERS="${THR_INSTALL_ALLOWED_SIGNERS:-thr-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAXr9HFt+bOkFt6Hx9xC5z/KpwBL0Y5RDonM1eqErPKl thr-release}"
+THR_SKILL_MARKER_V1="<!-- thr:managed-skill:v1 -->"
+THR_SKILL_MARKER_V2="<!-- thr:managed-skill:v2 -->"
 
 THR_TMPDIR=""
 THR_EXTRACT_DIR=""
 THR_INSTALLED_BIN=""
 THR_UPDATED_SHELL_RC=0
+THR_FOUND_AGENT_SKILL=0
 THR_AGENT_SKILL_NAMES=("Claude Code" "OpenCode" "Codex" "Other")
 
 log() {
@@ -349,6 +352,11 @@ prefetch_model() {
   return 0
 }
 
+migrate_default_database() {
+  log "Checking database migration..."
+  "$THR_INSTALLED_BIN" migrate
+}
+
 install_agent_skill() {
   local target="$1"
 
@@ -358,6 +366,31 @@ install_agent_skill() {
 
   warn "Could not install the thr skill for ${target}. You can retry later with: thr setup ${target}"
   return 0
+}
+
+agent_skill_is_managed() {
+  local path="$1"
+
+  [[ -f "$path" ]] && { grep -qF "$THR_SKILL_MARKER_V1" "$path" || grep -qF "$THR_SKILL_MARKER_V2" "$path"; }
+}
+
+update_existing_agent_skills() {
+  local path target
+
+  while IFS='|' read -r target path; do
+    if [[ ! -e "$path" && ! -L "$path" ]]; then
+      continue
+    fi
+    if agent_skill_is_managed "$path"; then
+      THR_FOUND_AGENT_SKILL=1
+      install_agent_skill "$target"
+    else
+      log "Leaving existing unmanaged skill unchanged at ${path}"
+    fi
+  done <<EOF
+claude-code|$HOME/.claude/skills/thr/SKILL.md
+opencode|$HOME/.agents/skills/thr/SKILL.md
+EOF
 }
 
 print_other_skill_guidance() {
@@ -717,6 +750,10 @@ install_selected_agent_skills() {
 offer_agent_skill_setup() {
   local reply selected_targets selection_status
 
+  if [[ "$THR_FOUND_AGENT_SKILL" -eq 1 ]]; then
+    return 0
+  fi
+
   if [[ "${THR_INSTALL_SKIP_SKILL_PROMPT:-0}" == "1" ]]; then
     return 0
   fi
@@ -759,7 +796,9 @@ offer_agent_skill_setup() {
 main() {
   download_release_archive
   install_binary
+  migrate_default_database
   prefetch_model
+  update_existing_agent_skills
   offer_agent_skill_setup
 
   log "Ready: ${THR_INSTALLED_BIN}"

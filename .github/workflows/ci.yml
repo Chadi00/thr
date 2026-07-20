@@ -52,7 +52,7 @@ jobs:
         run: bash scripts/package_release_fixture_test.sh
 
       - name: Run Go tests
-        run: go test ./...
+        run: go test -tags sqlite_fts5 ./...
 
   test-shipping-intel:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -67,7 +67,7 @@ jobs:
           cache: true
 
       - name: Run Go tests
-        run: go test ./...
+        run: go test -tags sqlite_fts5 ./...
 
   installer-smoke:
     strategy:

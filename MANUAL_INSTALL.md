@@ -84,3 +84,16 @@ Then check the install:
 thr version
 thr prefetch
 ```
+
+## 6. Migrate existing data
+
+The one-line installer automatically runs `thr migrate` when its selected default database (`THR_DB` or `~/.thr/thr.db`) exists. After a manual install, run it explicitly if you want the upgrade before normal use:
+
+```bash
+thr migrate
+thr --db /path/to/another.db migrate
+```
+
+Otherwise, the first operational access migrates each legacy database automatically, including custom `--db` databases. `thr context` is read-only and only reports `migration_required`.
+
+Migration creates and verifies a private timestamped backup before changing the database. Existing memories keep their IDs and are assigned to `user` with `scope_assignment: legacy_default`. Older binaries cannot use the scoped database; restore the reported backup to downgrade.

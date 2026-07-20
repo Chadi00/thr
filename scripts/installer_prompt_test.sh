@@ -141,6 +141,46 @@ assert_target_invalid() {
   unset THR_INSTALL_TEST_UNAME_S THR_INSTALL_TEST_UNAME_M
 }
 
+assert_installer_maintenance() {
+  local work home log stub
+
+  work="$(mktemp -d "${TMPDIR:-/tmp}/thr-installer-test.XXXXXX")"
+  home="$work/home"
+  log="$work/commands"
+  stub="$work/thr"
+  mkdir -p "$home/.thr" "$home/.claude/skills/thr" "$home/.agents/skills/thr"
+  cat >"$stub" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$THR_INSTALL_TEST_COMMAND_LOG"
+EOF
+  chmod +x "$stub"
+
+  HOME="$home"
+  THR_INSTALLED_BIN="$stub"
+  THR_INSTALL_TEST_COMMAND_LOG="$log"
+  export HOME THR_INSTALLED_BIN THR_INSTALL_TEST_COMMAND_LOG
+
+  migrate_default_database
+  grep -qFx 'migrate' "$log" || fail 'expected database migration check'
+
+  printf '%s\n' "$THR_SKILL_MARKER_V1" >"$home/.claude/skills/thr/SKILL.md"
+  printf '%s\n' "$THR_SKILL_MARKER_V2" >"$home/.agents/skills/thr/SKILL.md"
+  update_existing_agent_skills
+  grep -qF 'setup claude-code' "$log" || fail 'expected v1 Claude skill update'
+  grep -qF 'setup opencode' "$log" || fail 'expected v2 shared skill update'
+  [[ "$THR_FOUND_AGENT_SKILL" -eq 1 ]] || fail 'expected existing skill detection'
+
+  : >"$log"
+  printf '%s\n' 'custom skill' >"$home/.claude/skills/thr/SKILL.md"
+  printf '%s\n' 'custom skill' >"$home/.agents/skills/thr/SKILL.md"
+  THR_FOUND_AGENT_SKILL=0
+  update_existing_agent_skills
+  [[ ! -s "$log" ]] || fail 'unmanaged skills must not be replaced'
+  [[ "$THR_FOUND_AGENT_SKILL" -eq 0 ]] || fail 'unmanaged skills must not suppress prompts for other agents'
+
+  rm -rf "$work"
+}
+
 main() {
   assert_parse 'claude' 'claude-code'
   assert_parse 'claude,codex' 'claude-code codex'
@@ -175,6 +215,7 @@ main() {
   assert_target 'Linux' 'amd64' 'linux-amd64' 'libonnxruntime.so'
   assert_target_invalid 'FreeBSD' 'amd64'
   assert_target_invalid 'Linux' 'riscv64'
+  assert_installer_maintenance
 
   printf '[installer-prompt-test] ok\n'
 }

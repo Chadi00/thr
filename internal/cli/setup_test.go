@@ -49,8 +49,12 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 				"name: thr",
 				"description: Use thr for durable memory across coding sessions",
 				thrSkillManagedMarker,
-				"thr ask --json",
-				"thr search --json",
+				"thr --format json-v2 context",
+				"thr --format json-v2 ask",
+				"--scope user",
+				"thr move",
+				"--cwd",
+				"repo:<id>",
 				"thr index",
 			} {
 				if !strings.Contains(content, want) {
@@ -113,18 +117,22 @@ func TestSetupCodexRefusesUnmanagedSkillWithoutForce(t *testing.T) {
 	}
 }
 
-func TestSetupUpdatesManagedSkill(t *testing.T) {
-	home := setupTempHome(t)
-	path := filepath.Join(home, ".claude", "skills", "thr", "SKILL.md")
-	writeTestFile(t, path, "---\nname: thr\ndescription: old\n---\n\n"+thrSkillManagedMarker+"\nold\n")
+func TestSetupUpdatesRecognizedManagedSkills(t *testing.T) {
+	for _, marker := range []string{thrSkillManagedMarkerV1, thrSkillManagedMarker} {
+		t.Run(marker, func(t *testing.T) {
+			home := setupTempHome(t)
+			path := filepath.Join(home, ".claude", "skills", "thr", "SKILL.md")
+			writeTestFile(t, path, "---\nname: thr\ndescription: old\n---\n\n"+marker+"\nold\n")
 
-	output := runRootCommand(t, "setup", "claude-code")
+			output := runRootCommand(t, "setup", "claude-code")
 
-	if !strings.Contains(output, "updated thr skill for Claude Code at "+path) {
-		t.Fatalf("unexpected update output: %q", output)
-	}
-	if got := readFileString(t, path); got != agentSkills.ThrSkill {
-		t.Fatalf("expected managed skill to be replaced with canonical content")
+			if !strings.Contains(output, "updated thr skill for Claude Code at "+path) {
+				t.Fatalf("unexpected update output: %q", output)
+			}
+			if got := readFileString(t, path); got != agentSkills.ThrSkill {
+				t.Fatalf("expected managed skill to be replaced with canonical content")
+			}
+		})
 	}
 }
 

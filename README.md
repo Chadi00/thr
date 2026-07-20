@@ -20,7 +20,7 @@ Local semantic memory for your terminal and coding agents.
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-The installer downloads the latest macOS or Linux release and verifies signed checksums before installing. Prefer manual verification? See [MANUAL_INSTALL.md](MANUAL_INSTALL.md).
+The installer downloads the latest macOS or Linux release, verifies signed checksums, and installs the binary. If the selected default database (`THR_DB` or `~/.thr/thr.db`) exists, it also runs its backed-up migration. Recognized managed agent skills are updated automatically; the optional prompt is only for a new skill. Prefer manual verification? See [MANUAL_INSTALL.md](MANUAL_INSTALL.md).
 
 ## Quick Start
 
@@ -43,7 +43,27 @@ thr setup opencode
 thr setup claude-code
 ```
 
-After that, an agent can retrieve durable project facts with `thr ask --json` or `thr search --json`, then maintain memories with `thr add`, `thr edit`, and `thr forget`.
+After that, an agent can retrieve durable facts with `thr --format json-v2 ask` or `search`, then maintain memories with `add`, `edit`, `move`, and `forget`.
+
+## Scopes
+
+Inside a Git repository, default recall searches that repository plus the user scope, while an unqualified write uses the repository scope. Broad writes are explicit:
+
+```bash
+thr add "This repository uses pnpm"
+thr add --scope user "The user prefers concise explanations"
+```
+
+Outside a repository, default recall searches `user` and writes require `--scope user`. Use `--scope repo` for only the current repository, `--scope repo:<id>` for another registered repository, or repeated `--scope`/`--all-scopes` for explicit unions. `--cwd /path/to/repo` changes repository context without changing the shell directory.
+
+```bash
+thr --format json-v2 context
+thr --cwd ../other-repo --format json-v2 ask "release process"
+thr --format json-v2 scope list
+thr move 42 --to repo:<id>
+```
+
+JSON v2 reports the selected database, searched scopes, result scopes, warnings, and structured errors. Existing `--json` output remains available as the legacy format.
 
 ## Features
 
@@ -64,8 +84,12 @@ thr ask <question>      Retrieve semantically similar memories
 thr search <query>      Search memories by text
 thr edit <id> <text>    Replace a memory
 thr forget <id>         Delete a memory
+thr move <id> --to ...  Move a memory between scopes
 thr stats               Show database path and count
 thr index               Rebuild semantic embeddings
+thr context             Inspect repository and scope context
+thr scope ...           Inspect or manage scopes
+thr migrate             Explicitly run a backed-up migration
 thr prefetch            Prepare the model cache
 thr setup <agent>       Install an agent skill
 ```
@@ -75,7 +99,7 @@ Useful flags:
 ```bash
 thr --db ./thr.db ...
 THR_DB=./thr.db thr list
-thr ask --json "repo conventions"
+thr --format json-v2 ask "repo conventions"
 thr search -n 5 "release notes"
 ```
 
@@ -88,6 +112,10 @@ thr search -n 5 "release notes"
 | Install prefix | `~/.local` |
 
 Memories are stored as local plaintext SQLite. The default data directories are created with private filesystem permissions, but the database is not encrypted at rest.
+
+The installer migrates its selected default database automatically. Other legacy databases, including custom `--db` paths, migrate on first operational access after a private verified backup is created. `thr context` is the read-only exception: it reports `migration_required` without changing the database. You can run `thr --db <path> migrate` explicitly at any time.
+
+Legacy memories are assigned to `user` with `scope_assignment: legacy_default` so existing visibility is preserved until reviewed and moved. A scoped database cannot be opened by older binaries; downgrade by restoring the reported pre-migration backup.
 
 `thr` has no telemetry. Release archives include the embedding model and runtime needed for offline semantic search.
 

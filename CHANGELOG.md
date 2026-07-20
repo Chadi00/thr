@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added user and repository memory scopes, explicit selectors, `--cwd`, JSON v2 output, context and scope inspection, atomic memory moves, and backed-up scope migration.
+
+### Changed
+
+- Default repository recall now includes repository and user memories, while writes use the least-broad repository scope unless `--scope user` is explicit.
+- Operational database access now migrates legacy databases automatically; `thr context` remains read-only, and `thr migrate` remains available explicitly.
+- The installer now migrates an existing selected default database and automatically updates recognized v1 or v2 managed skills. Unmanaged skills are never replaced without `thr setup --force`.
+- The bundled managed skill now uses marker v2 and teaches scope-aware JSON v2 workflows.
+
 ## [0.1.21] - 2026-05-01
 
 ### Added
