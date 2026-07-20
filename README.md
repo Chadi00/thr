@@ -20,9 +20,11 @@ Local semantic memory for your terminal and coding agents.
 curl -fsSL https://raw.githubusercontent.com/Chadi00/thr/master/install.sh | bash
 ```
 
-The installer downloads the latest macOS or Linux release, verifies signed checksums, and installs the binary. If the selected default database (`THR_DB` or `~/.thr/thr.db`) exists, it also runs its backed-up migration. Recognized managed agent skills are updated automatically; the optional prompt is only for a new skill. Prefer manual verification? See [MANUAL_INSTALL.md](MANUAL_INSTALL.md).
+The installer downloads and verifies the latest macOS or Linux release, installs the binary and packaged ONNX Runtime, migrates the selected default database (`THR_DB` or `~/.thr/thr.db`) when needed, and prepares the bundled model cache. Recognized managed agent skills are updated automatically; skill setup is offered when no managed skill is found. Prefer manual verification? See [MANUAL_INSTALL.md](MANUAL_INSTALL.md).
 
 ## Quick Start
+
+From inside a Git repository:
 
 ```bash
 thr add "This project prefers small PRs with tests"
@@ -43,27 +45,29 @@ thr setup opencode
 thr setup claude-code
 ```
 
-After that, an agent can retrieve durable facts with `thr --format json-v2 ask` or `search`, then maintain memories with `add`, `edit`, `move`, and `forget`.
+After that, an agent can retrieve durable facts with `thr --format json-v2 ask "<question>"` or `thr --format json-v2 search "<query>"`, then maintain memories with `add`, `edit`, `move`, and `forget`.
 
 ## Scopes
 
-Inside a Git repository, default recall searches that repository plus the user scope, while an unqualified write uses the repository scope. Broad writes are explicit:
+When Git safely resolves the current repository, default `ask`, `search`, and `list` operations search its repository scope, when one exists, plus `user`. An unqualified `add` creates or binds the repository scope when needed and writes there. Broad writes are explicit:
 
 ```bash
 thr add "This repository uses pnpm"
 thr add --scope user "The user prefers concise explanations"
 ```
 
-Outside a repository, default recall searches `user` and writes require `--scope user`. Use `--scope repo` for only the current repository, `--scope repo:<id>` for another registered repository, or repeated `--scope`/`--all-scopes` for explicit unions. `--cwd /path/to/repo` changes repository context without changing the shell directory.
+Outside a repository, default recall searches `user` and writes require `--scope user`. On `ask`, `search`, and `list`, repeat `--scope user|repo|repo:<id>` to search a union, or use `--all-scopes`; the two forms are mutually exclusive. `stats` and `index` accept the same selectors but inspect all scopes by default. `add` accepts one destination `--scope`, while `move` requires one destination `--to`. Exact-ID `show`, `edit`, and `forget` operations do not depend on repository resolution. `--cwd /path/to/repo` changes repository context without changing the shell directory.
 
 ```bash
 thr --format json-v2 context
 thr --cwd ../other-repo --format json-v2 ask "release process"
 thr --format json-v2 scope list
-thr move 42 --to repo:<id>
+thr move 42 --to repo:01KABC
 ```
 
-JSON v2 reports the selected database, searched scopes, result scopes, warnings, and structured errors. Existing `--json` output remains available as the legacy format.
+Repository identity prefers the configured `thr.identityRemote`, then `origin`, then a sole remote. If an unbound repository has multiple remotes and no `origin`, select one with `git config --local thr.identityRemote <remote-name>`. `thr context` reports database status, current or prospective scope, defaults, and repository resolution without creating or migrating the database.
+
+`--format` accepts `human`, `legacy-json`, or `json-v2`; `--json` selects legacy JSON and cannot be combined with `--format`. New integrations should use JSON v2, whose versioned envelope includes database and working-directory context, scope selection where applicable, memory scopes and revisions, warnings, and structured errors. Legacy JSON remains available for read-oriented commands but omits scope metadata.
 
 ## Features
 
@@ -75,23 +79,30 @@ JSON v2 reports the selected database, searched scopes, result scopes, warnings,
 
 ## CLI
 
-```bash
-thr add <text>          Save a memory
-thr add -               Save stdin
-thr list                List memories and ids
-thr show <id>           Print one memory
-thr ask <question>      Retrieve semantically similar memories
-thr search <query>      Search memories by text
-thr edit <id> <text>    Replace a memory
-thr forget <id>         Delete a memory
-thr move <id> --to ...  Move a memory between scopes
-thr stats               Show database path and count
-thr index               Rebuild semantic embeddings
-thr context             Inspect repository and scope context
-thr scope ...           Inspect or manage scopes
-thr migrate             Explicitly run a backed-up migration
-thr prefetch            Prepare the model cache
-thr setup <agent>       Install an agent skill
+```text
+thr add <text|->                    Save a memory; '-' reads stdin
+thr list                            List newest memories, IDs, and scopes
+thr show <id>                       Print one memory by global ID
+thr ask <question>                  Retrieve semantically similar memories
+thr search <query>                  Run text and fuzzy recall
+thr edit <id> <text|->              Replace a memory; '-' reads stdin
+thr forget <id>                     Delete a memory
+thr move <id> --to <scope>          Move without changing ID, text, or embedding
+thr stats                           Show database, model, index, and scope health
+thr index                           Build missing or stale embeddings
+thr context                         Inspect database and repository scope context
+thr scope list                      List registered scopes
+thr scope show <scope>              Show one scope and its bindings
+thr scope create repo               Create and bind the current repository scope
+thr scope bind <repo:id>            Bind the current checkout
+thr scope unbind                    Unbind the current checkout
+thr scope rebind <repo:id>          Transfer the current checkout binding
+thr scope rename <repo:id> <label>  Rename a repository scope
+thr scope split                     Bind the checkout to a new empty scope
+thr migrate                         Back up and migrate a legacy database
+thr prefetch                        Prepare the bundled model cache
+thr setup <agent>                    Install a codex, opencode, or claude-code skill
+thr version                         Print version information
 ```
 
 Useful flags:
@@ -99,23 +110,31 @@ Useful flags:
 ```bash
 thr --db ./thr.db ...
 THR_DB=./thr.db thr list
+thr --cwd ../other-repo --format json-v2 context
 thr --format json-v2 ask "repo conventions"
+thr ask --scope repo --scope user "release process"
+thr list --scope user --legacy
+thr stats --all-scopes
 thr search -n 5 "release notes"
+thr edit 42 "updated text" --if-revision 3
 ```
+
+Use `thr <command> --help` for command-specific limits, scope selectors, concurrency preconditions, and management flags.
+See the [complete command guide](docs/commands.md) for every command, flag, and workflow.
 
 ## Data
 
-| Data | Default |
-|------|---------|
-| Memories | `~/.thr/thr.db` |
-| Model cache | `~/.thr/models` |
-| Install prefix | `~/.local` |
+| Data | Selection/default |
+|------|-------------------|
+| Memories | `--db`, then `THR_DB`, then `~/.thr/thr.db` |
+| Model cache | `THR_MODEL_CACHE`, then `~/.thr/models` |
+| Install prefix | `THR_INSTALL_PREFIX`, then `~/.local` |
 
 Memories are stored as local plaintext SQLite. The default data directories are created with private filesystem permissions, but the database is not encrypted at rest.
 
 The installer migrates its selected default database automatically. Other legacy databases, including custom `--db` paths, migrate on first operational access after a private verified backup is created. `thr context` is the read-only exception: it reports `migration_required` without changing the database. You can run `thr --db <path> migrate` explicitly at any time.
 
-Legacy memories are assigned to `user` with `scope_assignment: legacy_default` so existing visibility is preserved until reviewed and moved. A scoped database cannot be opened by older binaries; downgrade by restoring the reported pre-migration backup.
+Legacy memories are assigned to `user` with `scope_assignment: legacy_default` so existing visibility is preserved until reviewed. List them with `thr list --scope user --legacy`; moving one to `user`, `repo`, or `repo:<id>` records an explicit assignment. A scoped database cannot be opened by older binaries; downgrade by restoring the reported pre-migration backup.
 
 `thr` has no telemetry. Release archives include the embedding model and runtime needed for offline semantic search.
 
@@ -128,6 +147,7 @@ Windows and Alpine/musl Linux are not supported yet.
 ## Links
 
 - [Releases](https://github.com/Chadi00/thr/releases)
+- [Command guide](docs/commands.md)
 - [Changelog](CHANGELOG.md)
 - [License](LICENSE)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

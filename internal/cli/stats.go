@@ -69,13 +69,17 @@ func newStatsCommand(dbPath *string) *cobra.Command {
 				return output.PrintStatsJSON(cmd.OutOrStdout(), stats)
 			}
 			output.PrintStats(cmd.OutOrStdout(), stats)
-			for _, row := range perScope {
-				scope := row["scope"].(output.ScopeDTO)
-				fmt.Fprintf(cmd.OutOrStdout(), "scope\t%s\tmemories=%v\tindexed=%v\tstale=%v\tmissing=%v\n", output.SanitizeInline(scope.ID), row["memories"], row["indexed"], row["stale"], row["missing"])
+			if len(perScope) > 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "\nScopes")
+				table := output.NewTable(cmd.OutOrStdout())
+				fmt.Fprintln(table, "SCOPE\tMEMORIES\tINDEXED\tSTALE\tMISSING")
+				for _, row := range perScope {
+					scope := row["scope"].(output.ScopeDTO)
+					fmt.Fprintf(table, "%s\t%v\t%v\t%v\t%v\n", output.SanitizeInline(scope.ID), row["memories"], row["indexed"], row["stale"], row["missing"])
+				}
+				_ = table.Flush()
 			}
-			for _, warning := range selection.Warnings {
-				fmt.Fprintf(cmd.OutOrStdout(), "warning: %s; run %s\n", warning.Message, warning.Details["suggested_command"])
-			}
+			printHumanWarnings(cmd, selection, nil)
 			return nil
 		},
 	}

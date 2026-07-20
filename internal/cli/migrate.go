@@ -36,7 +36,8 @@ func newMigrateCommand(dbPath *string) *cobra.Command {
 				if isJSONV2Output(cmd) {
 					return encodeV2(cmd, "database.migrate", selection, map[string]any{"migrated": false}, nil)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "no database to migrate")
+				fmt.Fprintf(cmd.OutOrStdout(), "No database exists at %s; nothing to migrate.\n", output.SanitizeInline(cfg.DBPath))
+				printManagedSkillWarnings(cmd, selection.Warnings)
 				return nil
 			}
 			result, err := store.MigratePath(cmd.Context(), cfg.DBPath)
@@ -55,11 +56,14 @@ func newMigrateCommand(dbPath *string) *cobra.Command {
 				}, nil)
 			}
 			if result.BackupPath == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "database is already current")
+				fmt.Fprintln(cmd.OutOrStdout(), "Database is already current; nothing to migrate.")
 				printManagedSkillWarnings(cmd, selection.Warnings)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "migrated %d memories to [user]\nbackup\t%s\n", result.Memories, output.SanitizeInline(result.BackupPath))
+			fmt.Fprintln(cmd.OutOrStdout(), "Database migration complete.")
+			fmt.Fprintf(cmd.OutOrStdout(), "Memories migrated: %d\n", result.Memories)
+			fmt.Fprintln(cmd.OutOrStdout(), "Destination scope: [user]")
+			fmt.Fprintf(cmd.OutOrStdout(), "Backup: %s\n", output.SanitizeInline(result.BackupPath))
 			printManagedSkillWarnings(cmd, selection.Warnings)
 			return nil
 		},
@@ -67,7 +71,5 @@ func newMigrateCommand(dbPath *string) *cobra.Command {
 }
 
 func printManagedSkillWarnings(cmd *cobra.Command, warnings []output.Warning) {
-	for _, warning := range warnings {
-		fmt.Fprintf(cmd.OutOrStdout(), "warning: %s; run %s\n", warning.Message, warning.Details["suggested_command"])
-	}
+	printWarnings(cmd, warnings)
 }

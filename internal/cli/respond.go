@@ -71,18 +71,23 @@ func selectionWarnings(selection resolvedSelection, memories []domain.Memory) []
 }
 
 func printHumanWarnings(cmd *cobra.Command, selection resolvedSelection, memories []domain.Memory) {
-	for _, memory := range memories {
-		if memory.ScopeAssignment == domain.ScopeAssignmentLegacy {
-			fmt.Fprintln(cmd.OutOrStdout(), "warning: legacy memories are assigned to [user]; review with 'thr list --scope user --legacy'")
-			break
-		}
+	mode, _ := commandOutputMode(cmd)
+	if mode == outputHuman {
+		printWarnings(cmd, selectionWarnings(selection, memories))
 	}
 }
 
-func printAutomaticMigration(cmd *cobra.Command, selection resolvedSelection) {
-	mode, _ := commandOutputMode(cmd)
-	if mode == outputHuman && selection.Migration != nil && selection.Migration.BackupPath != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "migrated legacy memories to [user]; backup: %s\n", output.SanitizeInline(selection.Migration.BackupPath))
+func printWarnings(cmd *cobra.Command, warnings []output.Warning) {
+	for _, warning := range warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", output.SanitizeInline(warning.Message))
+		if command, ok := warning.Details["suggested_command"].(string); ok && command != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Next: %s\n", output.SanitizeInline(command))
+		} else if warning.Code == "legacy_scope_assignment" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Next: thr list --scope user --legacy")
+		}
+		if backup, ok := warning.Details["backup_path"].(string); ok && backup != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Backup: %s\n", output.SanitizeInline(backup))
+		}
 	}
 }
 

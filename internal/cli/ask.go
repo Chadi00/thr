@@ -41,6 +41,7 @@ func newAskCommand(dbPath *string) *cobra.Command {
 					return output.PrintSemanticResultsJSON(cmd.OutOrStdout(), nil)
 				}
 				output.PrintSemanticResults(cmd.OutOrStdout(), nil, withDistance)
+				printHumanWarnings(cmd, selection, nil)
 				return nil
 			}
 

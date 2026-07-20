@@ -40,7 +40,7 @@ func TestSetupCommandsInstallAgentSkills(t *testing.T) {
 			path := filepath.Join(append([]string{home}, tt.relativePath...)...)
 
 			output := runRootCommand(t, "setup", tt.command)
-			if !strings.Contains(output, "installed thr skill for "+tt.displayName+" at "+path) {
+			if !strings.Contains(output, "Installed thr skill for "+tt.displayName+" at "+path) {
 				t.Fatalf("unexpected setup output: %q", output)
 			}
 
@@ -76,7 +76,7 @@ func TestSetupCommandIsIdempotent(t *testing.T) {
 	runRootCommand(t, "setup", "codex")
 	output := runRootCommand(t, "setup", "codex")
 
-	if !strings.Contains(output, "thr skill already installed for Codex at "+path) {
+	if !strings.Contains(output, "The thr skill for Codex is already current at "+path) {
 		t.Fatalf("unexpected idempotent setup output: %q", output)
 	}
 	if got := readFileString(t, path); got != agentSkills.ThrSkill {
@@ -92,7 +92,7 @@ func TestSetupCodexIgnoresCODEXHome(t *testing.T) {
 
 	output := runRootCommand(t, "setup", "codex")
 
-	if !strings.Contains(output, "installed thr skill for Codex at "+path) {
+	if !strings.Contains(output, "Installed thr skill for Codex at "+path) {
 		t.Fatalf("unexpected setup output: %q", output)
 	}
 	if got := readFileString(t, path); got != agentSkills.ThrSkill {
@@ -126,7 +126,7 @@ func TestSetupUpdatesRecognizedManagedSkills(t *testing.T) {
 
 			output := runRootCommand(t, "setup", "claude-code")
 
-			if !strings.Contains(output, "updated thr skill for Claude Code at "+path) {
+			if !strings.Contains(output, "Updated thr skill for Claude Code at "+path) {
 				t.Fatalf("unexpected update output: %q", output)
 			}
 			if got := readFileString(t, path); got != agentSkills.ThrSkill {
@@ -171,7 +171,7 @@ func TestSetupOpenCodeAndCodexShareGlobalAgentSkill(t *testing.T) {
 	runRootCommand(t, "setup", "opencode")
 	output := runRootCommand(t, "setup", "codex")
 
-	if !strings.Contains(output, "thr skill already installed for Codex at "+path) {
+	if !strings.Contains(output, "The thr skill for Codex is already current at "+path) {
 		t.Fatalf("unexpected shared setup output: %q", output)
 	}
 	assertPathAbsent(t, filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md"))

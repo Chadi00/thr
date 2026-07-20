@@ -46,6 +46,7 @@ func newForgetCommand(dbPath *string) *cobra.Command {
 				return encodeV2(cmd, "memory.forget", selection, map[string]any{"memory": output.NewMemoryDTO(memory)}, []domain.Memory{memory})
 			}
 			output.PrintForget(cmd.OutOrStdout(), memory)
+			printHumanWarnings(cmd, selection, []domain.Memory{memory})
 			return nil
 		},
 	}

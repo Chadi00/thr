@@ -63,7 +63,7 @@ func TestStatsJSONOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 func TestListOnMissingDatabaseDoesNotCreateDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "missing.db")
 	output := runRootCommand(t, "--db", dbPath, "list")
-	if strings.TrimSpace(output) != "no memories stored" {
+	if strings.TrimSpace(output) != "No memories found in the selected scopes." {
 		t.Fatalf("unexpected list output: %q", output)
 	}
 	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
@@ -170,7 +170,7 @@ func TestIndexOnMissingDatabaseDoesNotCreateDBOrModelCache(t *testing.T) {
 	t.Setenv("THR_MODEL_CACHE", modelCache)
 
 	output := runRootCommand(t, "--db", dbPath, "index")
-	if strings.TrimSpace(output) != "no memories stored" {
+	if strings.TrimSpace(output) != "No memories need indexing." {
 		t.Fatalf("unexpected index output: %q", output)
 	}
 	assertPathAbsent(t, dbPath)
@@ -183,7 +183,7 @@ func TestAskOnMissingDatabaseDoesNotCreateDBOrModelCache(t *testing.T) {
 	t.Setenv("THR_MODEL_CACHE", modelCache)
 
 	output := runRootCommand(t, "--db", dbPath, "ask", "what does the user prefer?")
-	if strings.TrimSpace(output) != "no matching memories" {
+	if strings.TrimSpace(output) != "No memories matched the semantic query." {
 		t.Fatalf("unexpected ask output: %q", output)
 	}
 	assertPathAbsent(t, dbPath)
@@ -256,7 +256,12 @@ func TestContextDoesNotChangeCurrentDatabaseFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runRootCommand(t, "--db", dbPath, "--cwd", dir, "context")
+	output := runRootCommand(t, "--db", dbPath, "--cwd", dir, "context")
+	for _, label := range []string{"Database:", "Database status:", "Working directory:", "Repository resolution:", "Default write scope:", "Default read scopes:"} {
+		if !strings.Contains(output, label) {
+			t.Fatalf("context output missing %q: %q", label, output)
+		}
+	}
 	after, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -267,6 +272,86 @@ func TestContextDoesNotChangeCurrentDatabaseFiles(t *testing.T) {
 	}
 	if len(before) != len(after) || !info.ModTime().Equal(afterInfo.ModTime()) || info.Mode() != afterInfo.Mode() {
 		t.Fatalf("context changed database files: before=%v after=%v", before, after)
+	}
+}
+
+func TestScopeListHasClearColumns(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO scoped_memories(text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES ('one', 'user', 'explicit', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	output := runRootCommand(t, "--db", dbPath, "--cwd", t.TempDir(), "scope", "list")
+	if !strings.HasPrefix(output, "SCOPE  TYPE  MEMORIES  LABEL  CURRENT") || !strings.Contains(output, "user   user  1") {
+		t.Fatalf("scope list is not self-describing: %q", output)
+	}
+}
+
+func TestHumanErrorIncludesNextStep(t *testing.T) {
+	root := NewRootCommand("v1", "commit", "date")
+	command, _, err := root.Find([]string{"scope", "unbind"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := new(bytes.Buffer)
+	if !PrintError(command, &commandError{Message: "confirmation required", SuggestedCommand: "thr scope unbind --confirm-orphan"}, buf) {
+		t.Fatal("expected human error output")
+	}
+	if got, want := buf.String(), "Error: confirmation required\nNext: thr scope unbind --confirm-orphan\n"; got != want {
+		t.Fatalf("human error = %q, want %q", got, want)
+	}
+}
+
+func TestInvalidOutputFormatUsesHumanError(t *testing.T) {
+	root := NewRootCommand("v1", "commit", "date")
+	root.SetArgs([]string{"--format", "bad\x1b", "context"})
+	executed, err := root.ExecuteContextC(context.Background())
+	if err == nil {
+		t.Fatal("expected invalid format error")
+	}
+	buf := new(bytes.Buffer)
+	if !PrintError(executed, err, buf) || !strings.HasPrefix(buf.String(), "Error: unsupported --format") || strings.Contains(buf.String(), "\x1b") {
+		t.Fatalf("invalid format error was not safely rendered: %q", buf.String())
+	}
+}
+
+func TestLegacyJSONRejectsUnsupportedCommands(t *testing.T) {
+	for _, args := range [][]string{{"context"}, {"scope", "list"}} {
+		err := executeRootCommand(append([]string{"--format", "legacy-json"}, args...)...)
+		if err == nil || !strings.Contains(err.Error(), "legacy JSON is not supported") || !strings.Contains(err.Error(), "use --format json-v2") {
+			t.Fatalf("unexpected legacy JSON error for %v: %v", args, err)
+		}
+	}
+}
+
+func TestHumanWarningsUseStderr(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "thr.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO scoped_memories(text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES ('legacy', 'user', 'legacy_default', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	stdout, stderr := runRootCommandStreams(t, "--db", dbPath, "--cwd", t.TempDir(), "list", "--scope", "user")
+	if strings.Contains(stdout, "Warning:") || !strings.Contains(stdout, "ID  SCOPE") {
+		t.Fatalf("unexpected stdout: %q", stdout)
+	}
+	if !strings.Contains(stderr, "Warning: Returned memories include legacy user-scope assignments.") || !strings.Contains(stderr, "Next: thr list --scope user --legacy") {
+		t.Fatalf("unexpected stderr: %q", stderr)
 	}
 }
 
@@ -524,15 +609,22 @@ func chmodWithRestore(t *testing.T, path string, mode os.FileMode) {
 
 func runRootCommand(t *testing.T, args ...string) string {
 	t.Helper()
+	stdout, stderr := runRootCommandStreams(t, args...)
+	return stdout + stderr
+}
+
+func runRootCommandStreams(t *testing.T, args ...string) (string, string) {
+	t.Helper()
 	root := NewRootCommand("v1.2.3", "abc123", "2026-04-24T00:00:00Z")
 	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
 	root.SetOut(stdout)
-	root.SetErr(stdout)
+	root.SetErr(stderr)
 	root.SetArgs(args)
 	if err := root.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("execute %v: %v", args, err)
 	}
-	return stdout.String()
+	return stdout.String(), stderr.String()
 }
 
 func executeRootCommand(args ...string) error {

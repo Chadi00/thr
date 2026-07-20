@@ -141,6 +141,32 @@ func TestMovePreservesContentTimestampAndEmbedding(t *testing.T) {
 	if result.Memory.Scope.ID != "user" || result.Memory.ScopeAssignment != domain.ScopeAssignmentExplicit || result.Memory.Revision != memory.Revision+1 {
 		t.Fatalf("move did not update scope metadata: %+v", result.Memory)
 	}
+	if result.FromAssignment != domain.ScopeAssignmentAutomatic {
+		t.Fatalf("move lost source assignment: %q", result.FromAssignment)
+	}
+}
+
+func TestMoveReportsLegacySourceAssignment(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "thr.db"))
+	if err != nil {
+		if strings.Contains(err.Error(), "no such module: fts5") {
+			t.Skip("sqlite build does not include fts5")
+		}
+		t.Fatal(err)
+	}
+	defer db.Close()
+	result, err := db.Exec(`INSERT INTO scoped_memories(text, scope_id, scope_assignment, created_at, updated_at, scope_updated_at) VALUES ('legacy', 'user', 'legacy_default', 1, 1, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := result.LastInsertId()
+	moved, err := NewRepository(db).MoveMemory(context.Background(), id, "user", Preconditions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.FromAssignment != domain.ScopeAssignmentLegacy || moved.Memory.ScopeAssignment != domain.ScopeAssignmentExplicit {
+		t.Fatalf("legacy move assignments: from=%q to=%q", moved.FromAssignment, moved.Memory.ScopeAssignment)
+	}
 }
 
 func TestConcurrentFirstRepositoryWritesConverge(t *testing.T) {

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added user and repository memory scopes, explicit selectors, `--cwd`, JSON v2 output, context and scope inspection, atomic memory moves, and backed-up scope migration.
+- Added a complete command guide covering every command, flag, scope workflow, and output format.
 
 ### Changed
 
@@ -17,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Operational database access now migrates legacy databases automatically; `thr context` remains read-only, and `thr migrate` remains available explicitly.
 - The installer now migrates an existing selected default database and automatically updates recognized v1 or v2 managed skills. Unmanaged skills are never replaced without `thr setup --force`.
 - The bundled managed skill now uses marker v2 and teaches scope-aware JSON v2 workflows.
+- Human-readable output now uses labeled tables and fields, consistent scope markers, distinct empty states, and actionable warnings and errors.
+- GitHub Actions now use the Node.js 24-based `actions/checkout@v5` and `actions/setup-go@v6` releases.
+- Removed the completed memory scopes design specification.
+
+### Fixed
+
+- Commands without a legacy JSON encoder now reject `--json` and `--format legacy-json` instead of silently emitting human-readable output.
 
 ## [0.1.21] - 2026-05-01
 

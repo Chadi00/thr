@@ -64,7 +64,8 @@ func newEditCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "memory.edit", selection, map[string]any{"memory": output.NewMemoryDTO(memory)}, []domain.Memory{memory})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "updated memory %d in %s\n", memory.ID, memory.Scope.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated memory %d in %s.\n", memory.ID, output.ScopeMarker(memory.Scope, memory.ScopeAssignment))
+			printHumanWarnings(cmd, selection, []domain.Memory{memory})
 			return nil
 		},
 	}

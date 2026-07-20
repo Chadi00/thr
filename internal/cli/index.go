@@ -24,7 +24,8 @@ func newIndexCommand(dbPath *string) *cobra.Command {
 				if isJSONV2Output(cmd) {
 					return encodeV2(cmd, "memory.index", selection, map[string]any{"indexed": 0}, nil)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "no memories stored")
+				fmt.Fprintln(cmd.OutOrStdout(), "No memories need indexing.")
+				printHumanWarnings(cmd, selection, nil)
 				return nil
 			}
 			// Reopen writable after read-only scope resolution.
@@ -47,12 +48,13 @@ func newIndexCommand(dbPath *string) *cobra.Command {
 				if isJSONV2Output(cmd) {
 					return encodeV2(cmd, "memory.index", selection, map[string]any{"indexed": 0}, nil)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "semantic index is up to date")
+				fmt.Fprintln(cmd.OutOrStdout(), "Semantic index is up to date.")
+				printHumanWarnings(cmd, selection, nil)
 				return nil
 			}
 
 			if !isJSONV2Output(cmd) {
-				fmt.Fprintf(cmd.OutOrStdout(), "indexing %d memories\n", len(memories))
+				fmt.Fprintf(cmd.OutOrStdout(), "Indexing %d memories...\n", len(memories))
 			}
 			for i, memory := range memories {
 				embedding, err := deps.embedder.PassageEmbed(memory.Text)
@@ -63,12 +65,14 @@ func newIndexCommand(dbPath *string) *cobra.Command {
 					return err
 				}
 				if !isJSONV2Output(cmd) {
-					fmt.Fprintf(cmd.OutOrStdout(), "indexed %d/%d\n", i+1, len(memories))
+					fmt.Fprintf(cmd.OutOrStdout(), "Indexed %d of %d.\n", i+1, len(memories))
 				}
 			}
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "memory.index", selection, map[string]any{"indexed": len(memories)}, memories)
 			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Semantic index updated. Indexed memories: %d.\n", len(memories))
+			printHumanWarnings(cmd, selection, memories)
 			return nil
 		},
 	}

@@ -13,9 +13,18 @@ import (
 )
 
 func PrintError(cmd *cobra.Command, err error, writer io.Writer) bool {
-	format, _ := cmd.Flags().GetString("format")
-	if format != string(outputJSONV2) {
-		return false
+	mode, modeErr := commandOutputMode(cmd)
+	if modeErr != nil || mode != outputJSONV2 {
+		message := err.Error()
+		var commandErr *commandError
+		if errors.As(err, &commandErr) {
+			message = commandErr.Message
+		}
+		_, _ = io.WriteString(writer, "Error: "+output.SanitizeInline(message)+"\n")
+		if commandErr != nil && commandErr.SuggestedCommand != "" {
+			_, _ = io.WriteString(writer, "Next: "+output.SanitizeInline(commandErr.SuggestedCommand)+"\n")
+		}
+		return true
 	}
 	dbFlag, _ := cmd.Flags().GetString("db")
 	cfg, _ := config.Load(dbFlag)

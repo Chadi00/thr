@@ -20,6 +20,9 @@ func TestPrintMemoryListEscapesMultilineText(t *testing.T) {
 	PrintMemoryList(buf, []domain.Memory{memory})
 
 	got := buf.String()
+	if !strings.HasPrefix(got, "ID  SCOPE") {
+		t.Fatalf("expected self-describing list headers, got %q", got)
+	}
 	if strings.Contains(got, "line two\tindent\n") {
 		t.Fatalf("expected escaped inline output, got %q", got)
 	}
@@ -34,7 +37,7 @@ func TestPrintSearchResultsEscapesMultilineText(t *testing.T) {
 
 	PrintSearchResults(buf, []domain.Memory{memory})
 
-	if got := buf.String(); !strings.Contains(got, `alpha\nbeta`) {
+	if got := buf.String(); strings.Join(strings.Fields(strings.SplitN(got, "\n", 2)[0]), " ") != "ID SCOPE TEXT" || !strings.Contains(got, `alpha\nbeta`) {
 		t.Fatalf("expected escaped multiline text, got %q", got)
 	}
 }
@@ -45,17 +48,17 @@ func TestPrintSemanticResultsEscapesMultilineText(t *testing.T) {
 
 	PrintSemanticResults(buf, []store.SemanticHit{result}, true)
 
-	if got := buf.String(); !strings.Contains(got, `first\nsecond`) {
+	if got := buf.String(); strings.Join(strings.Fields(strings.SplitN(got, "\n", 2)[0]), " ") != "ID DISTANCE SCOPE TEXT" || !strings.Contains(got, `first\nsecond`) {
 		t.Fatalf("expected escaped multiline text, got %q", got)
 	}
 }
 
-func TestPrintSemanticResultsEmptyMatchesSearchOutput(t *testing.T) {
+func TestPrintSemanticResultsEmptyNamesSemanticQuery(t *testing.T) {
 	buf := new(bytes.Buffer)
 
 	PrintSemanticResults(buf, nil, true)
 
-	if got := strings.TrimSpace(buf.String()); got != "no matching memories" {
+	if got := strings.TrimSpace(buf.String()); got != "No memories matched the semantic query." {
 		t.Fatalf("expected no-match semantic output, got %q", got)
 	}
 }
@@ -97,6 +100,11 @@ func TestPrintMemoryPreservesNewlinesButEscapesControls(t *testing.T) {
 	PrintMemory(buf, memory)
 
 	got := buf.String()
+	for _, label := range []string{"ID: 2", "Scope: [user]", "Revision:", "Created:", "Updated:", "Text:"} {
+		if !strings.Contains(got, label) {
+			t.Fatalf("expected show output label %q in %q", label, got)
+		}
+	}
 	if !strings.Contains(got, "line one\nline two") {
 		t.Fatalf("expected show output to preserve memory newlines, got %q", got)
 	}
