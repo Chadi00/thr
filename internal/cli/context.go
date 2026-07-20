@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Chadi00/thr/internal/config"
 	"github.com/Chadi00/thr/internal/domain"
@@ -91,26 +92,49 @@ func newContextCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return output.EncodeJSONV2(cmd.OutOrStdout(), output.Envelope{OK: true, Command: "context.show", Context: contextDTO, Result: map[string]any{}, Warnings: warnings})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "database\t%s\t%s\n", output.SanitizeInline(cfg.DBPath), database.Status)
-			fmt.Fprintf(cmd.OutOrStdout(), "cwd\t%s\n", output.SanitizeInline(cwd))
-			if contextDTO.CurrentScope != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "current_scope\t%s\t%s\n", output.SanitizeInline(*contextDTO.CurrentScope.ID), output.SanitizeInline(contextDTO.CurrentScope.Label))
-			} else if contextDTO.ProspectiveScope != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "prospective_scope\t%s\n", output.SanitizeInline(contextDTO.ProspectiveScope.Label))
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "current_scope\tnone")
-			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Database: %s\n", output.SanitizeInline(cfg.DBPath))
+			fmt.Fprintf(cmd.OutOrStdout(), "Database status: %s\n", database.Status)
+			fmt.Fprintf(cmd.OutOrStdout(), "Working directory: %s\n", output.SanitizeInline(cwd))
 			if contextDTO.Resolution != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "resolution\t%s\n", contextDTO.Resolution.Status)
+				fmt.Fprintf(cmd.OutOrStdout(), "Repository resolution: %s (source: %s)\n", contextDTO.Resolution.Status, contextDTO.Resolution.Source)
 			}
-			for _, warning := range warnings {
-				if command, ok := warning.Details["suggested_command"]; ok {
-					fmt.Fprintf(cmd.OutOrStdout(), "warning\t%s\trun %s\n", warning.Message, command)
-				}
+			if contextDTO.CurrentScope != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Current scope: %s\n", describeContextScope(*contextDTO.CurrentScope))
+			} else if contextDTO.ProspectiveScope != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Prospective scope: %s\n", describeContextScope(*contextDTO.ProspectiveScope))
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Current scope: none")
 			}
+			if contextDTO.DefaultWriteScope != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Default write scope: %s\n", describeContextScope(*contextDTO.DefaultWriteScope))
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Default write scope: none")
+			}
+			readScopes := make([]string, len(contextDTO.DefaultReadScopes))
+			for i, scope := range contextDTO.DefaultReadScopes {
+				readScopes[i] = describeContextScope(scope)
+			}
+			readScopeText := strings.Join(readScopes, ", ")
+			if readScopeText == "" {
+				readScopeText = "none"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Default read scopes: %s\n", readScopeText)
+			printWarnings(cmd, warnings)
 			return nil
 		},
 	}
+}
+
+func describeContextScope(scope output.ContextScopeDTO) string {
+	label := output.SanitizeInline(scope.Label)
+	if scope.ID == nil {
+		return label + " (prospective)"
+	}
+	id := output.SanitizeInline(*scope.ID)
+	if label == "" || label == id {
+		return id
+	}
+	return fmt.Sprintf("%s (%s)", id, label)
 }
 
 func persistedContextScope(scope domain.Scope) output.ContextScopeDTO {

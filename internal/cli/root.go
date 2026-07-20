@@ -17,8 +17,14 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 		SilenceErrors: true,
 		Version:       versionString(version, commit, buildDate),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			_, err := commandOutputMode(cmd)
-			return err
+			mode, err := commandOutputMode(cmd)
+			if err != nil {
+				return err
+			}
+			if mode == outputLegacyJSON && !supportsLegacyJSON(cmd) {
+				return fmt.Errorf("legacy JSON is not supported for %s; use --format json-v2", cmd.CommandPath())
+			}
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			showVersion, err := cmd.Flags().GetBool("version")
@@ -64,6 +70,15 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 	)
 
 	return rootCmd
+}
+
+func supportsLegacyJSON(cmd *cobra.Command) bool {
+	switch cmd.CommandPath() {
+	case "thr list", "thr show", "thr search", "thr ask", "thr stats":
+		return true
+	default:
+		return false
+	}
 }
 
 func versionString(version string, commit string, buildDate string) string {

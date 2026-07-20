@@ -67,7 +67,6 @@ func resolveReadRuntime(cmd *cobra.Command, dbFlag string, selectors []string, a
 		selection.Mode = "automatic_read"
 	}
 	rememberSelection(cmd, selection)
-	printAutomaticMigration(cmd, selection)
 	if selection.Database.Status == store.DatabaseMissing {
 		if err := resolveMissingRead(&selection, selectors, all); err != nil {
 			return nil, selection, nil, err
@@ -104,7 +103,6 @@ func resolveWriteRuntime(cmd *cobra.Command, dbFlag, selector string) (*runtimeD
 		selection.Mode = "explicit"
 	}
 	rememberSelection(cmd, selection)
-	printAutomaticMigration(cmd, selection)
 	if selector != "" && selector != "user" && selector != "repo" && selection.Database.Status == store.DatabaseMissing {
 		return nil, selection, nil, scopeNotFound(selector)
 	}
@@ -187,7 +185,6 @@ func resolveExactRuntime(cmd *cobra.Command, dbFlag string, writable bool) (*run
 		selection.Database.Status = store.DatabaseCompatible
 	}
 	rememberSelection(cmd, selection)
-	printAutomaticMigration(cmd, selection)
 	var db *sql.DB
 	if writable {
 		db, err = store.OpenExistingWritable(cfg.DBPath)

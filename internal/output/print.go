@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"text/tabwriter"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -39,18 +40,21 @@ type legacySemanticHit struct {
 }
 
 func PrintMemoryAdded(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "stored memory %d in %s\n", memory.ID, scopeMarker(memory))
+	fmt.Fprintf(w, "Stored memory %d in %s.\n", memory.ID, memoryScopeMarker(memory))
 }
 
 func PrintMemoryList(w io.Writer, memories []domain.Memory) {
 	if len(memories) == 0 {
-		fmt.Fprintln(w, "no memories stored")
+		fmt.Fprintln(w, "No memories found in the selected scopes.")
 		return
 	}
 
+	table := NewTable(w)
+	fmt.Fprintln(table, "ID\tSCOPE\tUPDATED\tTEXT")
 	for _, memory := range memories {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", memory.ID, scopeMarker(memory), memory.UpdatedAt.Format(time.RFC3339), truncate(inlineText(memory.Text), 120))
+		fmt.Fprintf(table, "%d\t%s\t%s\t%s\n", memory.ID, memoryScopeMarker(memory), memory.UpdatedAt.Format(time.RFC3339), truncate(inlineText(memory.Text), 120))
 	}
+	_ = table.Flush()
 }
 
 func PrintMemoryListJSON(w io.Writer, memories []domain.Memory) error {
@@ -58,7 +62,12 @@ func PrintMemoryListJSON(w io.Writer, memories []domain.Memory) error {
 }
 
 func PrintMemory(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", memory.ID, scopeMarker(memory), memory.UpdatedAt.Format(time.RFC3339), sanitizeText(memory.Text, true))
+	fmt.Fprintf(w, "ID: %d\n", memory.ID)
+	fmt.Fprintf(w, "Scope: %s\n", memoryScopeMarker(memory))
+	fmt.Fprintf(w, "Revision: %d\n", memory.Revision)
+	fmt.Fprintf(w, "Created: %s\n", memory.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "Updated: %s\n", memory.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "Text:\n%s\n", sanitizeText(memory.Text, true))
 }
 
 func PrintMemoryJSON(w io.Writer, memory domain.Memory) error {
@@ -67,13 +76,16 @@ func PrintMemoryJSON(w io.Writer, memory domain.Memory) error {
 
 func PrintSearchResults(w io.Writer, memories []domain.Memory) {
 	if len(memories) == 0 {
-		fmt.Fprintln(w, "no matching memories")
+		fmt.Fprintln(w, "No memories matched the text query.")
 		return
 	}
 
+	table := NewTable(w)
+	fmt.Fprintln(table, "ID\tSCOPE\tTEXT")
 	for _, memory := range memories {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", memory.ID, scopeMarker(memory), inlineText(memory.Text))
+		fmt.Fprintf(table, "%d\t%s\t%s\n", memory.ID, memoryScopeMarker(memory), inlineText(memory.Text))
 	}
+	_ = table.Flush()
 }
 
 func PrintSearchResultsJSON(w io.Writer, memories []domain.Memory) error {
@@ -81,21 +93,28 @@ func PrintSearchResultsJSON(w io.Writer, memories []domain.Memory) error {
 }
 
 func PrintForget(w io.Writer, memory domain.Memory) {
-	fmt.Fprintf(w, "forgot memory %d from %s\n", memory.ID, scopeMarker(memory))
+	fmt.Fprintf(w, "Deleted memory %d from %s.\n", memory.ID, memoryScopeMarker(memory))
 }
 
 func PrintSemanticResults(w io.Writer, results []store.SemanticHit, withDistance bool) {
 	if len(results) == 0 {
-		fmt.Fprintln(w, "no matching memories")
+		fmt.Fprintln(w, "No memories matched the semantic query.")
 		return
+	}
+	table := NewTable(w)
+	if withDistance {
+		fmt.Fprintln(table, "ID\tDISTANCE\tSCOPE\tTEXT")
+	} else {
+		fmt.Fprintln(table, "ID\tSCOPE\tTEXT")
 	}
 	for _, result := range results {
 		if withDistance {
-			fmt.Fprintf(w, "%d\t%.6f\t%s\t%s\n", result.Memory.ID, result.Distance, scopeMarker(result.Memory), inlineText(result.Memory.Text))
+			fmt.Fprintf(table, "%d\t%.6f\t%s\t%s\n", result.Memory.ID, result.Distance, memoryScopeMarker(result.Memory), inlineText(result.Memory.Text))
 			continue
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\n", result.Memory.ID, scopeMarker(result.Memory), inlineText(result.Memory.Text))
+		fmt.Fprintf(table, "%d\t%s\t%s\n", result.Memory.ID, memoryScopeMarker(result.Memory), inlineText(result.Memory.Text))
 	}
+	_ = table.Flush()
 }
 
 func PrintSemanticResultsJSON(w io.Writer, results []store.SemanticHit) error {
@@ -107,16 +126,19 @@ func PrintSemanticResultsJSON(w io.Writer, results []store.SemanticHit) error {
 }
 
 func PrintStats(w io.Writer, stats Stats) {
-	fmt.Fprintf(w, "db_path\t%s\n", inlineText(stats.DBPath))
-	fmt.Fprintf(w, "model_cache\t%s\n", inlineText(stats.ModelCache))
-	fmt.Fprintf(w, "memories\t%d\n", stats.Memories)
-	fmt.Fprintf(w, "model_id\t%s\n", stats.ModelID)
-	fmt.Fprintf(w, "model_revision\t%s\n", stats.ModelRevision)
-	fmt.Fprintf(w, "model_manifest_sha256\t%s\n", stats.ModelManifestSHA256)
-	fmt.Fprintf(w, "model_verified\t%t\n", stats.ModelVerified)
-	fmt.Fprintf(w, "indexed_memories\t%d\n", stats.IndexedMemories)
-	fmt.Fprintf(w, "stale_memories\t%d\n", stats.StaleMemories)
-	fmt.Fprintf(w, "missing_embeddings\t%d\n", stats.MissingEmbeddings)
+	fmt.Fprintln(w, "Database")
+	fmt.Fprintf(w, "  Path: %s\n", inlineText(stats.DBPath))
+	fmt.Fprintf(w, "  Memories: %d\n\n", stats.Memories)
+	fmt.Fprintln(w, "Semantic index")
+	fmt.Fprintf(w, "  Indexed: %d\n", stats.IndexedMemories)
+	fmt.Fprintf(w, "  Stale: %d\n", stats.StaleMemories)
+	fmt.Fprintf(w, "  Missing: %d\n\n", stats.MissingEmbeddings)
+	fmt.Fprintln(w, "Embedding model")
+	fmt.Fprintf(w, "  ID: %s\n", inlineText(stats.ModelID))
+	fmt.Fprintf(w, "  Revision: %s\n", inlineText(stats.ModelRevision))
+	fmt.Fprintf(w, "  Manifest SHA-256: %s\n", inlineText(stats.ModelManifestSHA256))
+	fmt.Fprintf(w, "  Verified: %t\n", stats.ModelVerified)
+	fmt.Fprintf(w, "  Cache: %s\n", inlineText(stats.ModelCache))
 }
 
 func PrintStatsJSON(w io.Writer, stats Stats) error {
@@ -144,20 +166,26 @@ func legacyMemories(memories []domain.Memory) []legacyMemory {
 	return result
 }
 
-func scopeMarker(memory domain.Memory) string {
-	if memory.ScopeAssignment == domain.ScopeAssignmentLegacy {
+func ScopeMarker(scope domain.Scope, assignment domain.ScopeAssignment) string {
+	if assignment == domain.ScopeAssignmentLegacy {
 		return "[user:legacy]"
 	}
-	if memory.Scope.Kind != domain.ScopeKindRepo && !strings.HasPrefix(memory.Scope.ID, "repo:") {
+	if scope.Kind != domain.ScopeKindRepo && !strings.HasPrefix(scope.ID, "repo:") {
 		return "[user]"
 	}
 
 	// The full payload is the shortest implementation that is always unambiguous.
-	payload := strings.TrimPrefix(memory.Scope.ID, "repo:")
-	return fmt.Sprintf("[repo:%s/%s]", inlineText(memory.Scope.Label), inlineText(payload))
+	payload := strings.TrimPrefix(scope.ID, "repo:")
+	return fmt.Sprintf("[repo:%s/%s]", inlineText(scope.Label), inlineText(payload))
 }
 
+func NewTable(w io.Writer) *tabwriter.Writer { return tabwriter.NewWriter(w, 0, 4, 2, ' ', 0) }
+
 func SanitizeInline(value string) string { return inlineText(value) }
+
+func memoryScopeMarker(memory domain.Memory) string {
+	return ScopeMarker(memory.Scope, memory.ScopeAssignment)
+}
 
 func truncate(value string, max int) string {
 	if utf8.RuneCountInString(value) <= max {

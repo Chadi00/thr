@@ -69,7 +69,8 @@ func newMoveCommand(dbPath *string) *cobra.Command {
 					"memory": output.NewMemoryDTO(result.Memory), "from": output.NewScopeDTO(result.From), "to": output.NewScopeDTO(result.To),
 				}, []domain.Memory{result.Memory})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "moved memory %d from [%s] to [%s]\n", id, result.From.ID, result.To.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Moved memory %d from %s to %s.\n", id, output.ScopeMarker(result.From, result.FromAssignment), output.ScopeMarker(result.To, result.Memory.ScopeAssignment))
+			printHumanWarnings(cmd, selection, []domain.Memory{result.Memory})
 			return nil
 		},
 	}

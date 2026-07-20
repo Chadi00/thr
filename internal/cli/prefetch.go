@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +23,7 @@ The install script runs this after building so the first add or ask is not slow.
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "model.prefetch", independentSelection(cmd), map[string]any{"model_cache": deps.config.ModelCache, "ready": true}, nil)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Embedding model ready (cache: %s)\n", deps.config.ModelCache)
+			fmt.Fprintf(cmd.OutOrStdout(), "Embedding model is ready.\nCache: %s\n", output.SanitizeInline(deps.config.ModelCache))
 			return nil
 		},
 	}

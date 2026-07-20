@@ -117,11 +117,11 @@ func setupTargetPath(homeDir string, target setupTarget) string {
 func printSetupResult(cmd *cobra.Command, target setupTarget, result setupResult) {
 	switch result.status {
 	case setupStatusInstalled:
-		fmt.Fprintf(cmd.OutOrStdout(), "installed thr skill for %s at %s\n", target.displayName, result.path)
+		fmt.Fprintf(cmd.OutOrStdout(), "Installed thr skill for %s at %s.\n", target.displayName, output.SanitizeInline(result.path))
 	case setupStatusUpdated:
-		fmt.Fprintf(cmd.OutOrStdout(), "updated thr skill for %s at %s\n", target.displayName, result.path)
+		fmt.Fprintf(cmd.OutOrStdout(), "Updated thr skill for %s at %s.\n", target.displayName, output.SanitizeInline(result.path))
 	case setupStatusCurrent:
-		fmt.Fprintf(cmd.OutOrStdout(), "thr skill already installed for %s at %s\n", target.displayName, result.path)
+		fmt.Fprintf(cmd.OutOrStdout(), "The thr skill for %s is already current at %s.\n", target.displayName, output.SanitizeInline(result.path))
 	}
 }
 

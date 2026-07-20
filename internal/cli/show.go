@@ -45,6 +45,7 @@ func newShowCommand(dbPath *string) *cobra.Command {
 				return output.PrintMemoryJSON(cmd.OutOrStdout(), memory)
 			}
 			output.PrintMemory(cmd.OutOrStdout(), memory)
+			printHumanWarnings(cmd, selection, []domain.Memory{memory})
 			return nil
 		},
 	}

@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/Chadi00/thr/internal/domain"
 	"github.com/Chadi00/thr/internal/output"
@@ -49,16 +51,25 @@ func newScopeListCommand(dbPath *string) *cobra.Command {
 				}
 				return encodeV2(cmd, "scope.list", selection, map[string]any{"scopes": rows}, nil)
 			}
-			for _, info := range infos {
-				marker := ""
-				if info.ID == currentID {
-					marker = "\tcurrent"
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\t%s%s\n", output.SanitizeInline(info.ID), info.Kind, info.MemoryCount, output.SanitizeInline(info.Label), marker)
-			}
 			if len(infos) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no scopes registered")
+				fmt.Fprintln(cmd.OutOrStdout(), "No scopes are registered.")
+			} else {
+				table := output.NewTable(cmd.OutOrStdout())
+				fmt.Fprintln(table, "SCOPE\tTYPE\tMEMORIES\tLABEL\tCURRENT")
+				for _, info := range infos {
+					label := output.SanitizeInline(info.Label)
+					if info.Label == "" || info.Label == info.ID {
+						label = "-"
+					}
+					fmt.Fprintf(table, "%s\t%s\t%d\t%s\t%t\n", output.SanitizeInline(info.ID), scopeType(info.Kind), info.MemoryCount, label, info.ID == currentID)
+				}
+				_ = table.Flush()
 			}
+			warnings := selectionWarnings(selection, nil)
+			if drift {
+				warnings = append(warnings, output.Warning{Code: "repository_identity_drift", Message: "The current checkout remote differs from its stored identity."})
+			}
+			printWarnings(cmd, warnings)
 			return nil
 		},
 	}
@@ -78,7 +89,8 @@ func newScopeShowCommand(dbPath *string) *cobra.Command {
 				if isJSONV2Output(cmd) {
 					return encodeV2(cmd, "scope.show", selection, map[string]any{"scope": map[string]any{"id": scope.ID, "kind": scope.Kind, "label": scope.Label, "memory_count": 0, "latest_updated_at": nil, "aliases": []string{}, "bindings": []map[string]any{}, "current": false, "warnings": []output.Warning{}}}, nil)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t0\t%s\n", scope.ID, scope.Kind, scope.Label)
+				printScopeDetails(cmd.OutOrStdout(), store.ScopeInfo{Scope: scope}, false)
+				printHumanWarnings(cmd, selection, nil)
 				return nil
 			}
 			infos, err := deps.repo.ListScopes(cmd.Context())
@@ -97,10 +109,13 @@ func newScopeShowCommand(dbPath *string) *cobra.Command {
 					}
 					return encodeV2(cmd, "scope.show", selection, map[string]any{"scope": map[string]any{"id": info.ID, "kind": info.Kind, "label": info.Label, "memory_count": info.MemoryCount, "latest_updated_at": info.Latest, "aliases": info.Aliases, "bindings": bindingDTOs(info.Bindings), "current": info.ID == currentID, "warnings": warnings}}, nil)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\t%s\n", output.SanitizeInline(info.ID), info.Kind, info.MemoryCount, output.SanitizeInline(info.Label))
-				for _, binding := range info.Bindings {
-					fmt.Fprintf(cmd.OutOrStdout(), "binding\t%s\t%s\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.CanonicalRemote))
+				currentID, drift := currentScopeID(cmd, deps.repo)
+				printScopeDetails(cmd.OutOrStdout(), info, info.ID == currentID)
+				warnings := selectionWarnings(selection, nil)
+				if info.ID == currentID && drift {
+					warnings = append(warnings, output.Warning{Code: "repository_identity_drift", Message: "The current checkout remote differs from its stored identity."})
 				}
+				printWarnings(cmd, warnings)
 				return nil
 			}
 			return scopeNotFound(args[0])
@@ -128,7 +143,7 @@ func newScopeCreateCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 			selection.Scopes = []domain.Scope{scope}
-			return printScopeMutation(cmd, "scope.create", selection, scope, "created")
+			return printScopeMutation(cmd, "scope.create", selection, scope, "Created")
 		},
 	}
 }
@@ -153,7 +168,8 @@ func newScopeBindCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "scope.bind", selection, map[string]any{"binding": bindingDTO(binding)}, nil)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "bound %s to %s\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.ScopeID))
+			fmt.Fprintf(cmd.OutOrStdout(), "Bound checkout %s to scope %s.\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.ScopeID))
+			printHumanWarnings(cmd, selection, nil)
 			return nil
 		},
 	}
@@ -183,7 +199,8 @@ func newScopeUnbindCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "scope.unbind", selection, map[string]any{"binding": bindingDTO(binding)}, nil)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "unbound %s from %s\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.ScopeID))
+			fmt.Fprintf(cmd.OutOrStdout(), "Unbound checkout %s from scope %s.\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.ScopeID))
+			printHumanWarnings(cmd, selection, nil)
 			return nil
 		},
 	}
@@ -211,7 +228,8 @@ func newScopeRebindCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "scope.rebind", selection, map[string]any{"old": bindingDTO(old), "new": bindingDTO(updated)}, nil)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "rebound %s from %s to %s\n", output.SanitizeInline(updated.CommonDir), output.SanitizeInline(old.ScopeID), output.SanitizeInline(updated.ScopeID))
+			fmt.Fprintf(cmd.OutOrStdout(), "Rebound checkout %s from scope %s to %s.\n", output.SanitizeInline(updated.CommonDir), output.SanitizeInline(old.ScopeID), output.SanitizeInline(updated.ScopeID))
+			printHumanWarnings(cmd, selection, nil)
 			return nil
 		},
 	}
@@ -231,7 +249,7 @@ func newScopeRenameCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 			selection.Scopes = []domain.Scope{scope}
-			return printScopeMutation(cmd, "scope.rename", selection, scope, "renamed")
+			return printScopeMutation(cmd, "scope.rename", selection, scope, "Renamed")
 		},
 	}
 }
@@ -257,7 +275,8 @@ func newScopeSplitCommand(dbPath *string) *cobra.Command {
 			if isJSONV2Output(cmd) {
 				return encodeV2(cmd, "scope.split", selection, map[string]any{"scope": output.NewScopeDTO(scope), "binding": bindingDTO(binding)}, nil)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "split %s into %s\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(scope.ID))
+			fmt.Fprintf(cmd.OutOrStdout(), "Split checkout %s into new scope %s.\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(scope.ID))
+			printHumanWarnings(cmd, selection, nil)
 			return nil
 		},
 	}
@@ -276,8 +295,48 @@ func printScopeMutation(cmd *cobra.Command, operation string, selection resolved
 	if isJSONV2Output(cmd) {
 		return encodeV2(cmd, operation, selection, map[string]any{"scope": output.NewScopeDTO(scope)}, nil)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s scope %s\t%s\n", verb, output.SanitizeInline(scope.ID), output.SanitizeInline(scope.Label))
+	fmt.Fprintf(cmd.OutOrStdout(), "%s scope %s (label: %s).\n", verb, output.SanitizeInline(scope.ID), output.SanitizeInline(scope.Label))
+	printHumanWarnings(cmd, selection, nil)
 	return nil
+}
+
+func printScopeDetails(w io.Writer, info store.ScopeInfo, current bool) {
+	latest := "never"
+	if info.Latest != nil {
+		latest = info.Latest.Format(time.RFC3339)
+	}
+	fmt.Fprintf(w, "ID: %s\n", output.SanitizeInline(info.ID))
+	fmt.Fprintf(w, "Type: %s\n", scopeType(info.Kind))
+	fmt.Fprintf(w, "Label: %s\n", output.SanitizeInline(info.Label))
+	fmt.Fprintf(w, "Memories: %d\n", info.MemoryCount)
+	fmt.Fprintf(w, "Last updated: %s\n", latest)
+	fmt.Fprintf(w, "Current repository: %t\n", current)
+	if len(info.Aliases) > 0 {
+		fmt.Fprintln(w, "Aliases:")
+		for _, alias := range info.Aliases {
+			fmt.Fprintf(w, "  - %s\n", output.SanitizeInline(alias))
+		}
+	}
+	if len(info.Bindings) > 0 {
+		fmt.Fprintln(w, "Bindings:")
+		table := output.NewTable(w)
+		fmt.Fprintln(table, "GIT DIRECTORY\tWORKTREE\tREMOTE\tACTIVE")
+		for _, binding := range info.Bindings {
+			remote := output.SanitizeInline(binding.CanonicalRemote)
+			if remote == "" {
+				remote = "-"
+			}
+			fmt.Fprintf(table, "%s\t%s\t%s\t%t\n", output.SanitizeInline(binding.CommonDir), output.SanitizeInline(binding.WorktreeRoot), remote, binding.Active)
+		}
+		_ = table.Flush()
+	}
+}
+
+func scopeType(kind domain.ScopeKind) string {
+	if kind == domain.ScopeKindRepo {
+		return "repository"
+	}
+	return "user"
 }
 
 func bindingDTO(binding store.RepositoryBinding) map[string]any {

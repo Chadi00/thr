@@ -66,9 +66,10 @@ type Preconditions struct {
 }
 
 type MoveResult struct {
-	Memory domain.Memory
-	From   domain.Scope
-	To     domain.Scope
+	Memory         domain.Memory
+	From           domain.Scope
+	FromAssignment domain.ScopeAssignment
+	To             domain.Scope
 }
 
 type Repository struct{ db *sql.DB }
@@ -266,7 +267,7 @@ func (r *Repository) MoveMemoryToRepository(ctx context.Context, id int64, obser
 }
 
 func moveMemoryTx(ctx context.Context, tx *sql.Tx, memory domain.Memory, target domain.Scope) (MoveResult, error) {
-	result := MoveResult{Memory: memory, From: memory.Scope, To: target}
+	result := MoveResult{Memory: memory, From: memory.Scope, FromAssignment: memory.ScopeAssignment, To: target}
 	if memory.Scope.ID == target.ID && memory.ScopeAssignment != domain.ScopeAssignmentLegacy {
 		return result, nil
 	}
