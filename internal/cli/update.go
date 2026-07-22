@@ -119,15 +119,19 @@ func runLatestInstaller(cmd *cobra.Command, prefix string, dbPath string) error 
 }
 
 func updateEnvironment(prefix string, dbPath string) []string {
-	environment := make([]string, 0, len(os.Environ())+3)
+	installPath := filepath.Join(prefix, "bin")
+	if path := os.Getenv("PATH"); path != "" {
+		installPath += string(os.PathListSeparator) + path
+	}
+	environment := make([]string, 0, len(os.Environ())+4)
 	for _, value := range os.Environ() {
 		name, _, _ := strings.Cut(value, "=")
-		if strings.HasPrefix(name, "THR_INSTALL_") || strings.HasPrefix(name, "BASH_FUNC_") || name == "BASH_ENV" || name == "BASHOPTS" || name == "SHELLOPTS" || (name == "THR_DB" && dbPath != "") {
+		if strings.HasPrefix(name, "THR_INSTALL_") || strings.HasPrefix(name, "BASH_FUNC_") || name == "BASH_ENV" || name == "BASHOPTS" || name == "SHELLOPTS" || name == "PATH" || (name == "THR_DB" && dbPath != "") {
 			continue
 		}
 		environment = append(environment, value)
 	}
-	environment = append(environment, "THR_INSTALL_PREFIX="+prefix, "THR_INSTALL_SKIP_SKILL_PROMPT=1")
+	environment = append(environment, "PATH="+installPath, "THR_INSTALL_PREFIX="+prefix, "THR_INSTALL_SKIP_SKILL_PROMPT=1")
 	if dbPath != "" {
 		environment = append(environment, "THR_DB="+dbPath)
 	}

@@ -31,7 +31,7 @@ func TestUpdateVerifiesAndRunsLatestInstaller(t *testing.T) {
 	t.Setenv("BASH_FUNC_thr_update_test%%", "() { printf compromised; }")
 
 	fixture := t.TempDir()
-	installer := []byte("#!/usr/bin/env bash\nif type thr_update_test >/dev/null 2>&1; then function=present; else function=; fi\nprintf 'prefix=%s db=%s skip=%s lib_only=%s test_url=%s bash_env=%s function=%s\\n' \"$THR_INSTALL_PREFIX\" \"$THR_DB\" \"$THR_INSTALL_SKIP_SKILL_PROMPT\" \"${THR_INSTALL_LIB_ONLY:-}\" \"${THR_INSTALL_TEST_BASE_URL:-}\" \"${BASH_ENV:-}\" \"$function\"\n")
+	installer := []byte("#!/usr/bin/env bash\nif type thr_update_test >/dev/null 2>&1; then function=present; else function=; fi\nprintf 'prefix=%s db=%s skip=%s path=%s lib_only=%s test_url=%s bash_env=%s function=%s\\n' \"$THR_INSTALL_PREFIX\" \"$THR_DB\" \"$THR_INSTALL_SKIP_SKILL_PROMPT\" \"$PATH\" \"${THR_INSTALL_LIB_ONLY:-}\" \"${THR_INSTALL_TEST_BASE_URL:-}\" \"${BASH_ENV:-}\" \"$function\"\n")
 	checksum := sha256.Sum256(installer)
 	checksums := []byte(fmt.Sprintf("%x  install.sh\n", checksum))
 	writeTestFile(t, filepath.Join(fixture, "install.sh"), string(installer))
@@ -56,7 +56,7 @@ func TestUpdateVerifiesAndRunsLatestInstaller(t *testing.T) {
 	})
 
 	stdout, stderr := runRootCommandStreams(t, "--db", dbPath, "--format", "json-v2", "update")
-	for _, want := range []string{"prefix=" + prefix, "db=" + dbPath, "skip=1"} {
+	for _, want := range []string{"prefix=" + prefix, "db=" + dbPath, "skip=1", "path=" + filepath.Join(prefix, "bin") + string(os.PathListSeparator)} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("installer output missing %q: %q", want, stderr)
 		}
