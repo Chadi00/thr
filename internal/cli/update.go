@@ -72,26 +72,16 @@ func runLatestInstaller(cmd *cobra.Command, prefix string, dbPath string) error 
 		return fmt.Errorf("write release signer: %w", err)
 	}
 	checksumsPath := filepath.Join(tempDir, "checksums.txt")
-	checksums, err := os.Open(checksumsPath)
-	if err != nil {
-		return fmt.Errorf("open release checksums: %w", err)
-	}
-	verify := exec.CommandContext(cmd.Context(), "ssh-keygen", "-Y", "verify", "-f", allowedSigners, "-I", "thr-release", "-n", "thr-release", "-s", filepath.Join(tempDir, "checksums.txt.sig"))
-	verify.Stdin = checksums
-	verify.Stdout = io.Discard
-	verify.Stderr = commandOutput
-	verifyErr := verify.Run()
-	closeErr := checksums.Close()
-	if verifyErr != nil {
-		return commandError("verify signed release checksums", verifyErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close release checksums: %w", closeErr)
-	}
-
 	checksumData, err := os.ReadFile(checksumsPath)
 	if err != nil {
 		return fmt.Errorf("read release checksums: %w", err)
+	}
+	verify := exec.CommandContext(cmd.Context(), "ssh-keygen", "-Y", "verify", "-f", allowedSigners, "-I", "thr-release", "-n", "thr-release", "-s", filepath.Join(tempDir, "checksums.txt.sig"))
+	verify.Stdin = bytes.NewReader(checksumData)
+	verify.Stdout = io.Discard
+	verify.Stderr = commandOutput
+	if err := verify.Run(); err != nil {
+		return commandError("verify signed release checksums", err)
 	}
 	expected := ""
 	for _, line := range strings.Split(string(checksumData), "\n") {
@@ -124,9 +114,7 @@ func runLatestInstaller(cmd *cobra.Command, prefix string, dbPath string) error 
 	if err := installer.Run(); err != nil {
 		return commandError("update thr", err)
 	}
-	if diagnostics.Len() > 0 {
-		_, _ = io.Copy(cmd.ErrOrStderr(), &diagnostics)
-	}
+	_, _ = io.Copy(cmd.ErrOrStderr(), &diagnostics)
 	return nil
 }
 
