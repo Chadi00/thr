@@ -87,6 +87,8 @@ func operationName(cmd *cobra.Command) string {
 		return "context.show"
 	case "thr migrate":
 		return "database.migrate"
+	case "thr update":
+		return "software.update"
 	}
 	if cmd.Parent() != nil && cmd.Parent().Name() == "scope" {
 		return "scope." + cmd.Name()
