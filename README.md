@@ -90,6 +90,7 @@ thr forget <id>                     Delete a memory
 thr move <id> --to <scope>          Move without changing ID, text, or embedding
 thr stats                           Show database, model, index, and scope health
 thr index                           Build missing or stale embeddings
+thr update                          Update thr to the latest release
 thr context                         Inspect database and repository scope context
 thr scope list                      List registered scopes
 thr scope show <scope>              Show one scope and its bindings

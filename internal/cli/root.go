@@ -64,6 +64,7 @@ func NewRootCommand(version string, commit string, buildDate string) *cobra.Comm
 		newScopeCommand(&dbPath),
 		newMigrateCommand(&dbPath),
 		newVersionCommand(version, commit, buildDate),
+		newUpdateCommand(&dbPath),
 		newPrefetchCommand(&dbPath),
 		newIndexCommand(&dbPath),
 		newSetupCommand(),

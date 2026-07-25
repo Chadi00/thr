@@ -540,6 +540,17 @@ thr setup opencode --force
 
 Symlinks and non-regular files are never overwritten.
 
+## Update
+
+```bash
+thr update
+```
+
+Downloads the latest release's installer and verifies it against the signed
+release checksums before running it. The command preserves the current
+installation prefix and updates the binary, packaged runtime, selected database,
+and managed agent skills.
+
 ## Version
 
 ```bash

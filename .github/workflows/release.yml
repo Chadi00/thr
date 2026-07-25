@@ -194,12 +194,13 @@ jobs:
           set -euo pipefail
           ssh-keygen -q -t ed25519 -N '' -C 'thr-smoke' -f "${RUNNER_TEMP}/thr_smoke_signing_key"
           echo "THR_INSTALL_ALLOWED_SIGNERS=thr-release $(cat "${RUNNER_TEMP}/thr_smoke_signing_key.pub")" >>"$GITHUB_ENV"
+          install -m 0755 install.sh dist/install.sh
           cd dist
-          shasum -a 256 thr_*.tar.gz > checksums.txt
+          shasum -a 256 thr_*.tar.gz install.sh > checksums.txt
           ssh-keygen -Y sign -f "${RUNNER_TEMP}/thr_smoke_signing_key" -n thr-release checksums.txt >/dev/null 2>/dev/null
 
       - name: Smoke test installer with built archives
-        run: THR_INSTALL_TEST_BASE_URL="file://${GITHUB_WORKSPACE}/dist" bash scripts/installer_smoke.sh
+        run: THR_INSTALL_TEST_BASE_URL="file://${GITHUB_WORKSPACE}/dist" THR_SMOKE_INSTALLER="${GITHUB_WORKSPACE}/dist/install.sh" bash scripts/installer_smoke.sh
 
   release:
     needs:
@@ -210,6 +211,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -221,8 +226,9 @@ jobs:
           THR_SSH_SIGNING_KEY: ${{ secrets.THR_SSH_SIGNING_KEY }}
         run: |
           set -euo pipefail
+          install -m 0755 install.sh dist/install.sh
           cd dist
-          shasum -a 256 thr_*.tar.gz | tee checksums.txt
+          shasum -a 256 thr_*.tar.gz install.sh | tee checksums.txt
           test -n "${THR_SSH_SIGNING_KEY}"
           printf '%s\n' "${THR_SSH_SIGNING_KEY}" > signing_key
           chmod 600 signing_key
@@ -233,6 +239,7 @@ jobs:
         with:
           subject-path: |
             dist/thr_*.tar.gz
+            dist/install.sh
             dist/checksums.txt
             dist/checksums.txt.sig
 
@@ -247,5 +254,6 @@ jobs:
             Upgrading automatically backs up and migrates the selected default database, assigning existing memories to the user scope with legacy provenance. Custom databases migrate on first operational access. Scoped databases are not readable by older binaries; downgrade by restoring the reported pre-migration backup.
           files: |
             dist/thr_*.tar.gz
+            dist/install.sh
             dist/checksums.txt
             dist/checksums.txt.sig

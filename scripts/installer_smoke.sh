@@ -237,7 +237,7 @@ main() {
   fi
 
   log 'Running install smoke test'
-  THR_INSTALL_TEST_BASE_URL="$release_base_url" THR_INSTALL_SKIP_SKILL_PROMPT=1 bash "$ROOT_DIR/install.sh"
+  THR_INSTALL_TEST_BASE_URL="$release_base_url" THR_INSTALL_SKIP_SKILL_PROMPT=1 bash "${THR_SMOKE_INSTALLER:-$ROOT_DIR/install.sh}"
 
   [[ -x "$install_dir/thr" ]] || fail 'install did not place thr in the install bin dir'
   [[ -f "$THR_INSTALL_PREFIX/lib/thr/manifest.json" ]] || fail 'install did not place thr manifest in the lib dir'
