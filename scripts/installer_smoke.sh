@@ -252,7 +252,7 @@ main() {
   : >"$HOME/.thr/models/model"
 
   log 'Running uninstall smoke test'
-  bash "$ROOT_DIR/uninstall.sh"
+  THR_UNINSTALL_NONINTERACTIVE=1 bash "$ROOT_DIR/uninstall.sh"
 
   [[ ! -e "$install_dir/thr" ]] || fail 'uninstall left thr behind'
   [[ ! -e "$THR_INSTALL_PREFIX/lib/thr" ]] || fail 'uninstall left thr runtime files behind'

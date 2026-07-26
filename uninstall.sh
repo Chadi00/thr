@@ -22,6 +22,8 @@ confirm() {
   local prompt="$1"
   local reply
 
+  [[ "${THR_UNINSTALL_NONINTERACTIVE:-0}" != "1" ]] || return 1
+
   if ! { exec 3<>/dev/tty; } 2>/dev/null; then
     return 1
   fi
