@@ -14,10 +14,19 @@ func newAddCommand(dbPath *string) *cobra.Command {
 	var scopeSelectors []string
 
 	cmd := &cobra.Command{
-		Use:   "add <text|->",
+		Use:   `add "<text>"|-`,
 		Short: "Store a memory",
-		Long:  "Add a memory from text. Use '-' to read from stdin explicitly.",
-		Args:  cobra.ExactArgs(1),
+		Long:  `Add a memory from text. Wrap multiword text in ASCII double quotes, or use '-' to read from stdin explicitly.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 1 {
+				return &commandError{
+					Code:             "memory_text_unquoted",
+					Message:          "memory text must be passed as one argument; wrap it in double quotes",
+					SuggestedCommand: `thr add "your memory"`,
+				}
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(scopeSelectors) > 1 {
 				return &commandError{Code: "scope_selector_invalid", Message: "add accepts exactly one --scope"}

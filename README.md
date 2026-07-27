@@ -80,7 +80,7 @@ Repository identity prefers the configured `thr.identityRemote`, then `origin`, 
 ## CLI
 
 ```text
-thr add <text|->                    Save a memory; '-' reads stdin
+thr add "<text>"|-                  Save a memory; '-' reads stdin
 thr list                            List newest memories, IDs, and scopes
 thr show <id>                       Print one memory by global ID
 thr ask <question>                  Retrieve semantically similar memories

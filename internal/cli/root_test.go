@@ -142,6 +142,42 @@ func TestInvalidAddInputDoesNotCreateDBOrModelCache(t *testing.T) {
 	assertPathAbsent(t, modelCache)
 }
 
+func TestAddRequiresMemoryTextAsSingleArgument(t *testing.T) {
+	cmd := newAddCommand(new(string))
+	for _, args := range [][]string{{"memory"}, {"memory text"}, {"-"}} {
+		if err := cmd.Args(cmd, args); err != nil {
+			t.Fatalf("expected %q to be accepted: %v", args, err)
+		}
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "missing.db")
+	modelCache := filepath.Join(t.TempDir(), "models")
+	t.Setenv("THR_MODEL_CACHE", modelCache)
+	root := NewRootCommand("v1", "commit", "date")
+	root.SetArgs([]string{"--db", dbPath, "--format", "json-v2", "add", "memory", "text"})
+	executed, err := root.ExecuteContextC(context.Background())
+	if err == nil {
+		t.Fatal("expected unquoted multiword text error")
+	}
+	buf := new(bytes.Buffer)
+	PrintError(executed, err, buf)
+	var envelope struct {
+		Command string `json:"command"`
+		Error   struct {
+			Code             string `json:"code"`
+			SuggestedCommand string `json:"suggested_command"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Command != "memory.add" || envelope.Error.Code != "memory_text_unquoted" || envelope.Error.SuggestedCommand != `thr add "your memory"` {
+		t.Fatalf("expected actionable unquoted text error, got %s", buf.String())
+	}
+	assertPathAbsent(t, dbPath)
+	assertPathAbsent(t, modelCache)
+}
+
 func TestOversizedMemoryTextDoesNotCreateDBOrModelCache(t *testing.T) {
 	for _, command := range [][]string{{"add"}, {"edit", "1"}} {
 		t.Run(command[0], func(t *testing.T) {

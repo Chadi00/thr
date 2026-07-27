@@ -32,7 +32,7 @@ Use `thr` when a coding task may depend on durable memory from previous sessions
 - In a repository, an unqualified `thr add` writes to that repository. Use explicit `--scope user` only for facts intended to apply across repositories. Outside a repository, writes require `--scope user`.
 - Save only durable information that is likely to help in future sessions.
 - Keep each memory short, standalone, and factual.
-- Prefer stdin for long or multiline text: `thr add -`.
+- Wrap multiword direct text in ASCII double quotes, for example `thr add "This repository uses pnpm"`. Prefer stdin for long or multiline text: `thr add -`.
 
 Good memories:
 

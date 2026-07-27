@@ -106,8 +106,11 @@ it omits scope metadata and should not be used for new integrations.
 ### Add A Memory
 
 ```text
-thr add <text|-> [--scope <scope>] [--max-bytes <bytes>]
+thr add "<text>"|- [--scope <scope>] [--max-bytes <bytes>]
 ```
+
+Multiword direct text must be wrapped in ASCII double quotes so the shell
+passes it as one argument. Use `thr add -` to read from stdin instead.
 
 Store a repository memory from inside a Git repository:
 
