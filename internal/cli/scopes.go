@@ -345,7 +345,7 @@ func resolveMissingRead(selection *resolvedSelection, selectors []string, all bo
 	for _, selector := range selectors {
 		if selector != "user" {
 			if selector == "repo" {
-				return &commandError{Code: "repository_scope_unpersisted", Message: "the current repository has no persisted scope", SuggestedCommand: "thr add <text>"}
+				return &commandError{Code: "repository_scope_unpersisted", Message: "the current repository has no persisted scope", SuggestedCommand: `thr add "your memory"`}
 			}
 			return scopeNotFound(selector)
 		}
@@ -359,7 +359,7 @@ func validSelector(value string) bool {
 }
 
 func writeScopeUnresolved() error {
-	return &commandError{Code: "write_scope_unresolved", Message: "cannot determine a default write scope outside a repository; use --scope user", SuggestedCommand: "thr add --scope user <text>"}
+	return &commandError{Code: "write_scope_unresolved", Message: "cannot determine a default write scope outside a repository; use --scope user", SuggestedCommand: `thr add --scope user "your memory"`}
 }
 
 func scopeNotFound(selector string) error {
