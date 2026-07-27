@@ -7,19 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-07-27
+
+### Changed
+
+- `thr add` now rejects memory text passed as multiple arguments and explains how to pass it as one argument.
+
+## [0.1.26] - 2026-07-27
+
 ### Added
 
-- Added user and repository memory scopes, explicit selectors, `--cwd`, JSON v2 output, context and scope inspection, atomic memory moves, and backed-up scope migration.
+- Added `make test-unit`, `make test-integration`, and `make test` targets.
+
+### Changed
+
+- Newly added and edited memories are limited to 508 Unicode code points so semantic embeddings never truncate their text.
+- Refreshed the README demo.
+
+## [0.1.25] - 2026-07-24
+
+### Added
+
+- Added `thr update`, which securely updates to the latest release while preserving the install prefix and selected database.
+- Release artifacts now include the `install.sh` used by the updater, covered by signed checksums and a build-provenance attestation.
+
+## [0.1.24] - 2026-07-20
+
+### Added
+
 - Added a complete command guide covering every command, flag, scope workflow, and output format.
 
 ### Changed
 
-- `thr add` now requires multiword memory text to be wrapped in ASCII double quotes and reports an actionable error when the shell splits unquoted text.
-- Newly added and edited memories are limited to 508 Unicode code points so semantic embeddings never truncate their text.
-- Default repository recall now includes repository and user memories, while writes use the least-broad repository scope unless `--scope user` is explicit.
-- Operational database access now migrates legacy databases automatically; `thr context` remains read-only, and `thr migrate` remains available explicitly.
-- The installer now migrates an existing selected default database and automatically updates recognized v1 or v2 managed skills. Unmanaged skills are never replaced without `thr setup --force`.
-- The bundled managed skill now uses marker v2 and teaches scope-aware JSON v2 workflows.
 - Human-readable output now uses labeled tables and fields, consistent scope markers, distinct empty states, and actionable warnings and errors.
 - GitHub Actions now use the Node.js 24-based `actions/checkout@v5` and `actions/setup-go@v6` releases.
 - Removed the completed memory scopes design specification.
@@ -27,6 +46,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Commands without a legacy JSON encoder now reject `--json` and `--format legacy-json` instead of silently emitting human-readable output.
+
+## [0.1.23] - 2026-07-20
+
+### Added
+
+- Added user and repository memory scopes, explicit selectors, `--cwd`, JSON v2 output, context and scope inspection, atomic memory moves, and backed-up scope migration.
+
+### Changed
+
+- Default repository recall now includes repository and user memories, while writes use the least-broad repository scope unless `--scope user` is explicit.
+- Operational database access now migrates legacy databases automatically; `thr context` remains read-only, and `thr migrate` remains available explicitly.
+- The installer now migrates an existing selected default database and automatically updates recognized v1 or v2 managed skills. Unmanaged skills are never replaced without `thr setup --force`.
+- The bundled managed skill now uses marker v2 and teaches scope-aware JSON v2 workflows.
+
+## [0.1.22] - 2026-05-01
+
+### Fixed
+
+- `thr setup opencode` and `thr setup codex` now install the managed Agent Skill under `~/.agents/skills/thr/SKILL.md`, the shared user-level Agent Skills location discovered by both agents.
+- The bundled `thr` skill frontmatter now avoids parser-sensitive YAML punctuation while keeping the portable `name` and `description` metadata required by Agent Skills.
 
 ## [0.1.21] - 2026-05-01
 
@@ -40,8 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `thr setup opencode` and `thr setup codex` now install the managed Agent Skill under `~/.agents/skills/thr/SKILL.md`, the shared user-level Agent Skills location discovered by both agents.
-- The bundled `thr` skill frontmatter now avoids parser-sensitive YAML punctuation while keeping the portable `name` and `description` metadata required by Agent Skills.
+- `thr setup codex` now installs the managed Agent Skill under `$CODEX_HOME/skills/thr/SKILL.md`, defaulting to `~/.codex/skills/thr/SKILL.md`, so Codex Desktop can discover it.
 
 ## [0.1.20] - 2026-04-30
 
@@ -49,10 +87,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release metadata and CI now cover glibc Linux arm64 and x86_64 alongside macOS, using pinned ONNX Runtime CPU assets.
 - Linux runtime lookup and release packaging now use the platform-correct `libonnxruntime.so` library name.
-- macOS release archives are now self-contained with a pinned ONNX Runtime shared library, so install and semantic search no longer require Homebrew.
-- Release checksum verification now uses OpenSSH signatures instead of a Homebrew-provided `minisign`.
+
+## [0.1.19] - 2026-04-30
+
+### Security
+
+- Removed the vendored embedding library's unpinned model-download fallback so semantic initialization uses only the pinned, hash-verified model cache.
+- Added checks that keep the pinned ONNX Runtime version aligned across installation, packaging, and runtime lookup.
+
+## [0.1.18] - 2026-04-29
+
+### Changed
+
 - Release packaging is now target metadata driven, with ONNX Runtime builds moved to a separate native-runtime workflow so normal product releases do not compile native dependencies.
 - CI now caches Go builds and keeps slower shipping-platform checks on the master/release path instead of every pull request.
+
+## [0.1.17] - 2026-04-28
+
+### Changed
+
+- macOS release archives are now self-contained with a pinned ONNX Runtime shared library, so install and semantic search no longer require Homebrew.
+- Release checksum verification now uses OpenSSH signatures instead of a Homebrew-provided `minisign`.
+- The default installation prefix is now `~/.local`, with `THR_INSTALL_PREFIX` available as an override.
+
+## [0.1.16] - 2026-04-27
+
+### Changed
+
+- The installer Agent Skill prompt now supports selecting and confirming multiple coding agents, with a text fallback for unsupported terminals.
+- Expanded the bundled skill description so agents recognize more memory retrieval and management tasks.
 
 ## [0.1.15] - 2026-04-26
 
@@ -126,7 +189,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Simplified the README install and uninstall docs to the default macOS Homebrew commands so the published instructions stay focused on the primary supported path.
+- Distribution and documentation now focus on a single macOS Homebrew install path; Linux release and installer paths were removed.
+
+### Fixed
+
+- Read-only commands no longer create or migrate missing or read-only databases.
 
 ## [0.1.5] - 2026-04-24
 
@@ -162,4 +229,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Prebuilt CGO `thr` binaries per OS/arch on GitHub Releases, `install.sh` defaulting to verified release tarballs (checksums) with a source-build fallback, and a tag-driven release workflow.
+- Added tag-driven release automation for prebuilt CGO `thr` binaries per OS and architecture, with `install.sh` defaulting to checksum-verified release archives and falling back to a source build.
