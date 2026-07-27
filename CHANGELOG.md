@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Newly added and edited memories are limited to 508 Unicode code points so semantic embeddings never truncate their text.
 - Default repository recall now includes repository and user memories, while writes use the least-broad repository scope unless `--scope user` is explicit.
 - Operational database access now migrates legacy databases automatically; `thr context` remains read-only, and `thr migrate` remains available explicitly.
 - The installer now migrates an existing selected default database and automatically updates recognized v1 or v2 managed skills. Unmanaged skills are never replaced without `thr setup --force`.

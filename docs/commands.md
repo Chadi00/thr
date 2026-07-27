@@ -134,6 +134,10 @@ Flags:
 | `--scope user|repo|repo:<id>` | Current repository | Select exactly one destination. |
 | `--max-bytes <bytes>` | `262144` | Set the maximum UTF-8 text size. |
 
+Memory text has a non-overridable limit of 508 Unicode code points so the
+semantic model embeds the complete memory without truncation. `--max-bytes`
+can impose a lower input limit but cannot raise the code-point limit.
+
 `add` creates the embedding immediately. An unqualified write outside a
 repository fails instead of silently creating a user-wide memory.
 
@@ -196,6 +200,9 @@ Flags:
 | `--max-bytes <bytes>` | Set the maximum replacement text size; default `262144`. |
 | `--if-scope <scope-id>` | Update only if the memory remains in this exact scope. |
 | `--if-revision <revision>` | Update only if the revision still matches. |
+
+Replacement text has the same non-overridable 508 Unicode-code-point limit as
+new memories.
 
 Editing replaces the text and embedding, updates the content timestamp, and
 increments the revision. It does not change the scope.
