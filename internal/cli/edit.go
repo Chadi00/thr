@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/Chadi00/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/embed"
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/Chadi00/thr/internal/store"
 	"github.com/spf13/cobra"
@@ -70,7 +71,7 @@ func newEditCommand(dbPath *string) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Int64Var(&maxBytes, "max-bytes", defaultMaxMemoryBytes, "Maximum memory text size in bytes")
+	cmd.Flags().Int64Var(&maxBytes, "max-bytes", defaultMaxMemoryBytes, fmt.Sprintf("Maximum input size in bytes (memory text limit: %d Unicode code points)", embed.MaxMemoryTextCodePoints))
 	cmd.Flags().StringVar(&ifScope, "if-scope", "", "Require the memory to remain in this scope")
 	cmd.Flags().Int64Var(&ifRevision, "if-revision", 0, "Require the current memory revision")
 

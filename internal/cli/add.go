@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Chadi00/thr/internal/domain"
+	"github.com/Chadi00/thr/internal/embed"
 	"github.com/Chadi00/thr/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -67,7 +68,7 @@ func newAddCommand(dbPath *string) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Int64Var(&maxBytes, "max-bytes", defaultMaxMemoryBytes, "Maximum memory text size in bytes")
+	cmd.Flags().Int64Var(&maxBytes, "max-bytes", defaultMaxMemoryBytes, fmt.Sprintf("Maximum input size in bytes (memory text limit: %d Unicode code points)", embed.MaxMemoryTextCodePoints))
 	cmd.Flags().StringArrayVar(&scopeSelectors, "scope", nil, "Destination scope: user, repo, or repo:<id>")
 
 	return cmd

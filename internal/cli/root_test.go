@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Chadi00/thr/internal/embed"
 	"github.com/Chadi00/thr/internal/repoctx"
 	"github.com/Chadi00/thr/internal/store"
 )
@@ -139,6 +140,41 @@ func TestInvalidAddInputDoesNotCreateDBOrModelCache(t *testing.T) {
 	}
 	assertPathAbsent(t, dbPath)
 	assertPathAbsent(t, modelCache)
+}
+
+func TestOversizedMemoryTextDoesNotCreateDBOrModelCache(t *testing.T) {
+	for _, command := range [][]string{{"add"}, {"edit", "1"}} {
+		t.Run(command[0], func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "missing.db")
+			modelCache := filepath.Join(t.TempDir(), "models")
+			t.Setenv("THR_MODEL_CACHE", modelCache)
+
+			root := NewRootCommand("v1", "commit", "date")
+			args := []string{"--db", dbPath, "--format", "json-v2"}
+			args = append(args, command...)
+			args = append(args, strings.Repeat("x", embed.MaxMemoryTextCodePoints+1))
+			root.SetArgs(args)
+			executed, err := root.ExecuteContextC(context.Background())
+			if err == nil {
+				t.Fatal("expected character limit error")
+			}
+			buf := new(bytes.Buffer)
+			PrintError(executed, err, buf)
+			var envelope struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Error.Code != "memory_text_too_large" {
+				t.Fatalf("unexpected error envelope: %s", buf.String())
+			}
+			assertPathAbsent(t, dbPath)
+			assertPathAbsent(t, modelCache)
+		})
+	}
 }
 
 func TestInvalidEditIDDoesNotCreateDBOrModelCache(t *testing.T) {

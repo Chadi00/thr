@@ -8,8 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/sugarme/tokenizer"
+	"github.com/sugarme/tokenizer/pretrained"
 )
 
 func TestBGEEmbedderReturnsErrorAfterClose(t *testing.T) {
@@ -22,6 +26,41 @@ func TestBGEEmbedderReturnsErrorAfterClose(t *testing.T) {
 	}
 	if _, err := embedder.QueryEmbed("hello"); err == nil {
 		t.Fatal("expected query embed after close to fail")
+	}
+}
+
+func TestMaxMemoryTextCodePointsFitsTokenizer(t *testing.T) {
+	data, err := embeddedModelAssets.ReadFile("model_assets/tokenizer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenizerPath := filepath.Join(t.TempDir(), "tokenizer.json")
+	if err := os.WriteFile(tokenizerPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tknzer, err := pretrained.FromFile(tokenizerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tknzer.WithTruncation(&tokenizer.TruncationParams{MaxLength: 512, Strategy: tokenizer.LongestFirst})
+
+	encode := func(text string) tokenizer.Encoding {
+		t.Helper()
+		inputs := []tokenizer.EncodeInput{tokenizer.NewSingleEncodeInput(tokenizer.NewInputSequence("passage: " + text))}
+		encodings, err := tknzer.EncodeBatch(inputs, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encodings[0]
+	}
+
+	atLimit := encode(strings.Repeat("!", MaxMemoryTextCodePoints))
+	if atLimit.Len() != 512 || len(atLimit.GetOverflowing()) != 0 {
+		t.Fatalf("expected limit to fit exactly, got length %d and %d overflows", atLimit.Len(), len(atLimit.GetOverflowing()))
+	}
+	overLimit := encode(strings.Repeat("!", MaxMemoryTextCodePoints+1))
+	if len(overLimit.GetOverflowing()) == 0 {
+		t.Fatal("expected one additional code point to overflow the tokenizer")
 	}
 }
 
