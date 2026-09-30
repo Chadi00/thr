@@ -107,11 +107,79 @@ func installSetupTarget(target setupTarget, force bool) (setupResult, error) {
 	if err != nil {
 		return setupResult{}, err
 	}
+	removed, err := removeLegacySkills(homeDir, target, targetPath)
+	if err != nil {
+		return setupResult{}, err
+	}
+	if removed {
+		status = setupStatusUpdated
+	}
 	return setupResult{status: status, path: targetPath}, nil
 }
 
 func setupTargetPath(homeDir string, target setupTarget) string {
 	return filepath.Join(append([]string{homeDir}, target.relativeSkillPath...)...)
+}
+
+func legacySkillPaths(homeDir string, target setupTarget) []string {
+	if target.name != "codex" && target.name != "opencode" {
+		return nil
+	}
+	paths := []string{
+		filepath.Join(homeDir, ".codex", "skills", "thr", "SKILL.md"),
+		filepath.Join(homeDir, ".config", "opencode", "skills", "thr", "SKILL.md"),
+	}
+	if codexHome := os.Getenv("CODEX_HOME"); codexHome != "" {
+		paths = append(paths, filepath.Join(codexHome, "skills", "thr", "SKILL.md"))
+	}
+	return paths
+}
+
+// Only retire managed copies after the canonical replacement is installed.
+func removeLegacySkills(homeDir string, target setupTarget, targetPath string) (bool, error) {
+	targetInfo, err := os.Stat(targetPath)
+	if err != nil {
+		return false, fmt.Errorf("inspect installed skill %s: %w", targetPath, err)
+	}
+	removed := false
+	for _, path := range legacySkillPaths(homeDir, target) {
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return removed, fmt.Errorf("inspect legacy skill %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() || os.SameFile(info, targetInfo) {
+			continue
+		}
+		dir := filepath.Dir(path)
+		dirInfo, err := os.Lstat(dir)
+		if err != nil {
+			return removed, fmt.Errorf("inspect legacy skill directory %s: %w", dir, err)
+		}
+		if dirInfo.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return removed, fmt.Errorf("read legacy skill %s: %w", path, err)
+		}
+		if !skillIsManaged(content) {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			return removed, fmt.Errorf("remove legacy skill %s: %w", path, err)
+		}
+		removed = true
+		// Remove the old skill directory only when empty; preserve supporting files.
+		_ = os.Remove(dir)
+	}
+	return removed, nil
+}
+
+func skillIsManaged(content []byte) bool {
+	return bytes.Contains(content, []byte(thrSkillManagedMarkerV1)) || bytes.Contains(content, []byte(thrSkillManagedMarker))
 }
 
 func printSetupResult(cmd *cobra.Command, target setupTarget, result setupResult) {
@@ -158,8 +226,7 @@ func installSkillFile(path string, content []byte, force bool) (setupStatus, err
 		}
 		return setupStatusCurrent, nil
 	}
-	managed := bytes.Contains(existing, []byte(thrSkillManagedMarkerV1)) || bytes.Contains(existing, []byte(thrSkillManagedMarker))
-	if !managed && !force {
+	if !skillIsManaged(existing) && !force {
 		return "", fmt.Errorf("refusing to overwrite existing unmanaged skill at %s; rerun with --force to replace it", path)
 	}
 
@@ -221,7 +288,7 @@ func managedSkillWarnings() []output.Warning {
 		if err != nil || bytes.Equal(content, []byte(agentSkills.ThrSkill)) {
 			continue
 		}
-		if bytes.Contains(content, []byte(thrSkillManagedMarkerV1)) || bytes.Contains(content, []byte(thrSkillManagedMarker)) {
+		if skillIsManaged(content) {
 			warnings = append(warnings, output.Warning{
 				Code: "managed_skill_outdated", Message: "An installed managed thr skill is outdated.",
 				Details: map[string]any{"path": path, "suggested_command": "thr setup " + target.name},
