@@ -47,6 +47,10 @@ thr setup claude-code
 
 After that, an agent can retrieve durable facts with `thr --format json-v2 ask "<question>"` or `thr --format json-v2 search "<query>"`, then maintain memories with `add`, `edit`, `move`, and `forget`.
 
+The skill also directs agents to proactively save verified, durable context before finishing a task, without requiring a separate reminder or confirmation for each ordinary memory. Useful memories include established preferences, decisions and their rationale, non-obvious constraints, and lessons that avoid repeating meaningful investigation. Agents skip temporary task state, secrets, and facts that are easy to discover from the repository, such as its programming language. User instructions against saving information still apply.
+
+Agents check existing memories before writing: they skip equivalent information, update an entry when correcting or refining the same fact, and create a new entry for a distinct fact or a different scope or applicability. They also proactively correct recalled memories when verified new information shows they are out of date. A repository-specific exception can be saved without overwriting a user-wide preference.
+
 ## Scopes
 
 When Git safely resolves the current repository, default `ask`, `search`, and `list` operations search its repository scope, when one exists, plus `user`. An unqualified `add` creates or binds the repository scope when needed and writes there. Broad writes are explicit:
