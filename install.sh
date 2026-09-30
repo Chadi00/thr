@@ -371,11 +371,11 @@ install_agent_skill() {
 agent_skill_is_managed() {
   local path="$1"
 
-  [[ -f "$path" ]] && { grep -qF "$THR_SKILL_MARKER_V1" "$path" || grep -qF "$THR_SKILL_MARKER_V2" "$path"; }
+  [[ -f "$path" && ! -L "$path" ]] && { grep -qF "$THR_SKILL_MARKER_V1" "$path" || grep -qF "$THR_SKILL_MARKER_V2" "$path"; }
 }
 
 update_existing_agent_skills() {
-  local path target
+  local path target shared_skill_updated=0
 
   while IFS='|' read -r target path; do
     if [[ ! -e "$path" && ! -L "$path" ]]; then
@@ -383,6 +383,12 @@ update_existing_agent_skills() {
     fi
     if agent_skill_is_managed "$path"; then
       THR_FOUND_AGENT_SKILL=1
+      if [[ "$target" == "codex" || "$target" == "opencode" ]]; then
+        if [[ "$shared_skill_updated" -eq 1 ]]; then
+          continue
+        fi
+        shared_skill_updated=1
+      fi
       install_agent_skill "$target"
     else
       log "Leaving existing unmanaged skill unchanged at ${path}"
@@ -390,6 +396,9 @@ update_existing_agent_skills() {
   done <<EOF
 claude-code|$HOME/.claude/skills/thr/SKILL.md
 opencode|$HOME/.agents/skills/thr/SKILL.md
+codex|$HOME/.codex/skills/thr/SKILL.md
+codex|${CODEX_HOME:-$HOME/.codex}/skills/thr/SKILL.md
+opencode|$HOME/.config/opencode/skills/thr/SKILL.md
 EOF
 }
 

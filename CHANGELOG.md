@@ -5,7 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.29] - Unreleased
+
+### Fixed
+
+- Skill setup and updates now migrate recognized managed skills from legacy Codex and OpenCode locations to the shared agent skill, removing old copies only after installing the replacement.
+
+## [0.1.28] - 2026-09-29
+
+### Changed
+
+- The bundled `thr` skill now proactively saves verified, durable context and corrects stale memories, with guidance for deduplicating entries, updating existing facts, and choosing the appropriate scope.
+- Agents now assess useful discoveries before completing tasks while skipping sensitive information and facts that are easy to rediscover from repository files.
+- Updated the README to describe proactive memory capture and maintenance.
 
 ## [0.1.27] - 2026-07-27
 

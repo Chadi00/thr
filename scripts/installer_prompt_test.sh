@@ -158,7 +158,8 @@ EOF
   HOME="$home"
   THR_INSTALLED_BIN="$stub"
   THR_INSTALL_TEST_COMMAND_LOG="$log"
-  export HOME THR_INSTALLED_BIN THR_INSTALL_TEST_COMMAND_LOG
+  CODEX_HOME=""
+  export HOME CODEX_HOME THR_INSTALLED_BIN THR_INSTALL_TEST_COMMAND_LOG
 
   migrate_default_database
   grep -qFx 'migrate' "$log" || fail 'expected database migration check'
@@ -180,6 +181,69 @@ EOF
 
   rm -rf "$work"
 }
+
+assert_installer_legacy_skill_maintenance() (
+  local work test_home stub command_log location marker legacy_path expected
+  local canonical default_codex custom_codex opencode
+
+  work="$(mktemp -d "${TMPDIR:-/tmp}/thr-installer-legacy-test.XXXXXX")"
+  trap 'rm -rf "$work"' EXIT
+  test_home="$work/home"
+  stub="$work/thr"
+  command_log="$work/commands"
+  export HOME="$test_home" CODEX_HOME="$work/custom-codex"
+  export THR_INSTALLED_BIN="$stub" THR_INSTALL_TEST_COMMAND_LOG="$command_log"
+  canonical="$HOME/.agents/skills/thr/SKILL.md"
+  default_codex="$HOME/.codex/skills/thr/SKILL.md"
+  custom_codex="$CODEX_HOME/skills/thr/SKILL.md"
+  opencode="$HOME/.config/opencode/skills/thr/SKILL.md"
+  mkdir -p "$(dirname "$canonical")" "$(dirname "$default_codex")" "$(dirname "$custom_codex")" "$(dirname "$opencode")"
+  cat >"$stub" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$THR_INSTALL_TEST_COMMAND_LOG"
+EOF
+  chmod +x "$stub"
+
+  for location in default-codex custom-codex opencode; do
+    case "$location" in
+      default-codex) legacy_path="$default_codex"; expected='setup codex' ;;
+      custom-codex) legacy_path="$custom_codex"; expected='setup codex' ;;
+      opencode) legacy_path="$opencode"; expected='setup opencode' ;;
+    esac
+    for marker in "$THR_SKILL_MARKER_V1" "$THR_SKILL_MARKER_V2"; do
+      : >"$command_log"
+      printf '%s\n' "$marker" >"$legacy_path"
+      THR_FOUND_AGENT_SKILL=0
+      update_existing_agent_skills
+      [[ "$(cat "$command_log")" == "$expected" ]] || fail "expected legacy ${location} to trigger ${expected} once"
+      [[ "$THR_FOUND_AGENT_SKILL" -eq 1 ]] || fail "expected legacy ${location} to suppress setup prompts"
+      rm "$legacy_path"
+    done
+  done
+
+  # Stubs leave files in place, so this also verifies duplicate detection without cleanup.
+  for legacy_path in "$canonical" "$default_codex" "$custom_codex" "$opencode"; do
+    printf '%s\n' "$THR_SKILL_MARKER_V1" >"$legacy_path"
+  done
+  : >"$command_log"
+  update_existing_agent_skills
+  [[ "$(cat "$command_log")" == 'setup opencode' ]] || fail 'expected only one shared skill update for duplicate installations'
+
+  for legacy_path in "$canonical" "$default_codex" "$custom_codex" "$opencode"; do
+    printf '%s\n' 'custom skill' >"$legacy_path"
+  done
+  : >"$command_log"
+  THR_FOUND_AGENT_SKILL=0
+  update_existing_agent_skills
+  [[ ! -s "$command_log" ]] || fail 'unmanaged legacy skills must not trigger setup'
+  [[ "$THR_FOUND_AGENT_SKILL" -eq 0 ]] || fail 'unmanaged legacy skills must not suppress setup prompts'
+
+  printf '%s\n' "$THR_SKILL_MARKER_V1" >"$work/linked-skill"
+  rm "$default_codex"
+  ln -s "$work/linked-skill" "$default_codex"
+  update_existing_agent_skills
+  [[ ! -s "$command_log" ]] || fail 'linked legacy skills must not trigger setup'
+)
 
 main() {
   assert_parse 'claude' 'claude-code'
@@ -216,6 +280,7 @@ main() {
   assert_target_invalid 'FreeBSD' 'amd64'
   assert_target_invalid 'Linux' 'riscv64'
   assert_installer_maintenance
+  assert_installer_legacy_skill_maintenance
 
   printf '[installer-prompt-test] ok\n'
 }

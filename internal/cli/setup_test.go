@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +177,156 @@ func TestSetupOpenCodeAndCodexShareGlobalAgentSkill(t *testing.T) {
 	}
 	assertPathAbsent(t, filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md"))
 	assertPathAbsent(t, filepath.Join(home, ".codex", "skills", "thr", "SKILL.md"))
+}
+
+func TestSetupMigratesLegacyManagedSkills(t *testing.T) {
+	for _, command := range []string{"codex", "opencode"} {
+		for _, marker := range []string{thrSkillManagedMarkerV1, thrSkillManagedMarker} {
+			for _, current := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/current=%t", command, marker, current), func(t *testing.T) {
+					home := setupTempHome(t)
+					codexHome := filepath.Join(t.TempDir(), "custom-codex")
+					t.Setenv("CODEX_HOME", codexHome)
+					path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
+					if current {
+						writeTestFile(t, path, agentSkills.ThrSkill)
+					}
+					legacyPaths := []string{
+						filepath.Join(home, ".codex", "skills", "thr", "SKILL.md"),
+						filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md"),
+						filepath.Join(codexHome, "skills", "thr", "SKILL.md"),
+					}
+					for _, legacyPath := range legacyPaths {
+						writeTestFile(t, legacyPath, marker+"\nold skill\n")
+					}
+					assetPath := filepath.Join(filepath.Dir(legacyPaths[0]), "notes.txt")
+					writeTestFile(t, assetPath, "supporting file\n")
+
+					output := runRootCommand(t, "setup", command)
+
+					if !strings.Contains(output, "Updated thr skill for") {
+						t.Fatalf("expected migration to report an update, got %q", output)
+					}
+					if got := readFileString(t, path); got != agentSkills.ThrSkill {
+						t.Fatal("expected current shared skill after migration")
+					}
+					for _, legacyPath := range legacyPaths {
+						assertPathAbsent(t, legacyPath)
+					}
+					if got := readFileString(t, assetPath); got != "supporting file\n" {
+						t.Fatalf("supporting file changed: %q", got)
+					}
+					assertPathAbsent(t, filepath.Dir(legacyPaths[1]))
+					assertPathAbsent(t, filepath.Dir(legacyPaths[2]))
+					if output := runRootCommand(t, "setup", command); !strings.Contains(output, "already current") {
+						t.Fatalf("expected idempotent setup after migration, got %q", output)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestSetupPreservesLegacySkillsWhenInstallFails(t *testing.T) {
+	for _, obstacle := range []string{"unmanaged", "symlink", "directory"} {
+		t.Run(obstacle, func(t *testing.T) {
+			home := setupTempHome(t)
+			legacyPath := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
+			original := thrSkillManagedMarkerV1 + "\nold skill\n"
+			writeTestFile(t, legacyPath, original)
+			path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
+			writeTestFile(t, path, "custom skill\n")
+			if obstacle != "unmanaged" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if obstacle == "symlink" {
+					if err := os.Symlink(legacyPath, path); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := executeRootCommand("setup", "codex"); err == nil {
+				t.Fatal("expected replacement installation to fail")
+			}
+			if got := readFileString(t, legacyPath); got != original {
+				t.Fatalf("legacy skill changed after failed installation: %q", got)
+			}
+		})
+	}
+}
+
+func TestSetupPreservesUnmanagedAndLinkedLegacySkills(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%t", force), func(t *testing.T) {
+			home := setupTempHome(t)
+			customPath := filepath.Join(home, ".config", "opencode", "skills", "thr", "SKILL.md")
+			writeTestFile(t, customPath, "custom skill\n")
+			managedPath := filepath.Join(t.TempDir(), "thr", "SKILL.md")
+			writeTestFile(t, managedPath, thrSkillManagedMarkerV1+"\nmanaged elsewhere\n")
+			linkedPath := filepath.Join(home, ".codex", "skills", "thr", "SKILL.md")
+			if err := os.MkdirAll(filepath.Dir(linkedPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(managedPath, linkedPath); err != nil {
+				t.Fatal(err)
+			}
+			codexHome := t.TempDir()
+			t.Setenv("CODEX_HOME", codexHome)
+			linkedDir := filepath.Join(codexHome, "skills", "thr")
+			if err := os.MkdirAll(filepath.Dir(linkedDir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Dir(managedPath), linkedDir); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"setup", "codex"}
+			if force {
+				args = append(args, "--force")
+			}
+
+			runRootCommand(t, args...)
+
+			if got := readFileString(t, customPath); got != "custom skill\n" {
+				t.Fatalf("custom legacy skill changed: %q", got)
+			}
+			if got := readFileString(t, managedPath); got != thrSkillManagedMarkerV1+"\nmanaged elsewhere\n" {
+				t.Fatalf("linked skill changed: %q", got)
+			}
+			for _, path := range []string{linkedPath, linkedDir} {
+				if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
+					t.Fatalf("expected legacy symlink to remain at %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSetupPreservesCanonicalSkillViaCODEXHomeAlias(t *testing.T) {
+	for _, linked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("symlink=%t", linked), func(t *testing.T) {
+			home := setupTempHome(t)
+			codexHome := filepath.Join(home, ".agents")
+			if linked {
+				alias := filepath.Join(home, "agents-alias")
+				if err := os.Symlink(codexHome, alias); err != nil {
+					t.Fatal(err)
+				}
+				codexHome = alias
+			}
+			t.Setenv("CODEX_HOME", codexHome)
+
+			runRootCommand(t, "setup", "codex")
+
+			path := filepath.Join(home, ".agents", "skills", "thr", "SKILL.md")
+			if got := readFileString(t, path); got != agentSkills.ThrSkill {
+				t.Fatal("canonical skill was changed during legacy cleanup")
+			}
+		})
+	}
 }
 
 func setupTempHome(t *testing.T) string {

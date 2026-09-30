@@ -541,14 +541,21 @@ The commands install the managed `thr` Agent Skill:
 | Codex | `~/.agents/skills/thr/SKILL.md` |
 
 OpenCode and Codex intentionally share the same file. Managed skill versions
-are updated automatically. An unmanaged regular file is preserved unless
+are updated automatically. Setup and updates migrate managed copies from the
+old `~/.codex/skills/thr` and `~/.config/opencode/skills/thr` locations, including
+`$CODEX_HOME/skills/thr` when configured. The current shared skill is installed
+before old managed `SKILL.md` files are removed. Other files in those directories
+are preserved, and empty old skill directories are removed.
+
+An unmanaged regular file at the current location is preserved unless
 `--force` is supplied:
 
 ```bash
 thr setup opencode --force
 ```
 
-Symlinks and non-regular files are never overwritten.
+Unmanaged legacy skills, symlinks, and non-regular files are preserved, including
+when `--force` is supplied.
 
 ## Update
 
